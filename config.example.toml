@@ -1,0 +1,46 @@
+[plugin]
+name = "maibot_social_link_parser"
+config_version = "0.1.1"
+version = "0.1.1"
+enabled = true
+# Do not send to QQ/NapCat. Parsing and downloads still run for local validation.
+dry_run = false
+
+[parser]
+# Keep bilibili disabled while the standalone Bilibili plugin is enabled.
+enabled_platforms = ["douyin", "xhs", "xiaoheihe"]
+group_whitelist = []
+block_ai_reply = true
+debounce_seconds = 120
+max_images = 9
+max_text_chars = 700
+send_images = true
+send_video = true
+use_forward_for_multi = true
+download_mode = "confirm"
+pending_download_ttl_seconds = 600
+send_preview_image = true
+reaction_emoji_enabled = true
+reaction_emoji_id = 76
+source_max_size_mb = 80
+source_max_minutes = 8
+
+[network]
+proxy = ""
+use_proxy_platforms = []
+common_timeout = 30
+download_timeout = 120
+download_retry_times = 3
+
+[cookies]
+douyin = ""
+xhs = ""
+xiaoheihe = ""
+bilibili = ""
+
+[api]
+# Transitional OneBot HTTP sender. WS adapter integration is a follow-up phase.
+host = "127.0.0.1"
+port = 3000
+token = ""
+bot_uin = ""
