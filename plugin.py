@@ -68,8 +68,8 @@ class PluginSectionConfig(PluginConfigBase):
     __ui_order__: ClassVar[int] = 0
 
     name: str = Field(default="maibot_social_link_parser", description="插件内部名称", json_schema_extra=_ui("插件内部名称", "仅用于标识配置；通常无需修改。", 0, label_en="Internal name", hint_en="Used only to identify this configuration. Usually leave unchanged.", label_ja="内部名", hint_ja="設定識別用です。通常は変更不要です。", disabled=True))
-    config_version: str = Field(default="0.1.2", description="配置文件版本", json_schema_extra=_ui("配置版本", "由插件用于补齐配置字段，请勿手动修改。", 1, label_en="Configuration version", hint_en="Used to merge configuration fields. Do not edit manually.", label_ja="設定バージョン", hint_ja="設定項目の統合に使用します。手動で変更しないでください。", disabled=True))
-    version: str = Field(default="0.1.2", description="插件版本", json_schema_extra=_ui("插件版本", "当前插件版本，仅供查看。", 2, label_en="Plugin version", hint_en="Current plugin version. Read only.", label_ja="プラグインバージョン", hint_ja="現在のプラグインバージョンです。読み取り専用です。", disabled=True))
+    config_version: str = Field(default="0.1.3", description="配置文件版本", json_schema_extra=_ui("配置版本", "由插件用于补齐配置字段，请勿手动修改。", 1, label_en="Configuration version", hint_en="Used to merge configuration fields. Do not edit manually.", label_ja="設定バージョン", hint_ja="設定項目の統合に使用します。手動で変更しないでください。", disabled=True))
+    version: str = Field(default="0.1.3", description="插件版本", json_schema_extra=_ui("插件版本", "当前插件版本，仅供查看。", 2, label_en="Plugin version", hint_en="Current plugin version. Read only.", label_ja="プラグインバージョン", hint_ja="現在のプラグインバージョンです。読み取り専用です。", disabled=True))
     enabled: bool = Field(default=True, description="是否启用插件", json_schema_extra=_ui("启用插件", "关闭后不再识别或处理社媒链接。", 3, label_en="Enable plugin", hint_en="When disabled, social media links are not detected or handled.", label_ja="プラグインを有効化", hint_ja="無効時はソーシャルメディアのリンクを処理しません。"))
     dry_run: bool = Field(default=False, description="演练模式", json_schema_extra=_ui("演练模式", "不向 QQ/NapCat 发送任何消息，仅记录拟发送内容；仍会下载媒体，可能消耗流量和磁盘。", 4, label_en="Dry run", hint_en="Prevents all QQ/NapCat sends and logs intended output. Downloads still run and use bandwidth and disk.", label_ja="ドライラン", hint_ja="QQ/NapCat への送信を行わず、送信予定をログに出します。ダウンロードは実行されます。"))
 
@@ -269,7 +269,8 @@ class MultiPlatformParserPlugin(MaiBotPlugin):
             if self.config.parser.reaction_emoji_enabled and self._get_group_id(message):
                 await self._send_emoji_reaction(message.get("message_id", ""), self.config.parser.reaction_emoji_id)
             if self.config.parser.download_mode == "automatic":
-                await self._send_result(message, result)
+                if not await self._send_result(message, result):
+                    await self._send_text(message, "原媒体下载或发送失败，请稍后重试。")
                 return
             await self._send_overview(message, result)
             self._store_pending_download(message, parser, keyword, searched, url)
@@ -282,7 +283,8 @@ class MultiPlatformParserPlugin(MaiBotPlugin):
             result = await pending.parser.parse(pending.keyword, pending.searched)
             if not result.url:
                 result.url = pending.url
-            await self._send_result(message, result)
+            if not await self._send_result(message, result):
+                await self._send_text(message, "原媒体下载或发送失败，请稍后重试。")
         except Exception as exc:
             self.ctx.logger.warning("Confirmed media download failed for %s: %s", pending.url, exc)
             await self._send_text(message, "媒体下载失败，请稍后重试。")
@@ -301,10 +303,12 @@ class MultiPlatformParserPlugin(MaiBotPlugin):
         if preview is not None:
             await self._send_image(message, preview)
 
-    async def _send_result(self, message: dict[str, Any], result: ParseResult) -> None:
+    async def _send_result(self, message: dict[str, Any], result: ParseResult) -> bool:
         header = self._format_header(result)
         text_nodes: list[list[dict[str, Any]]] = []
         media_items = self._flatten_contents(result)
+        # Full-media sends never use the author avatar. Close its lazy download coroutine.
+        self._cancel_author_avatar(result)
 
         if header:
             text_nodes.append([text_segment(header)])
@@ -346,18 +350,19 @@ class MultiPlatformParserPlugin(MaiBotPlugin):
 
         nodes = text_nodes + image_nodes
         sent_forward = False
+        all_sent = True
         if self.config.parser.use_forward_for_multi and len(nodes) > 1 and self._get_group_id(message):
             sent_forward = await self._send_group_forward(message, nodes)
 
         if not sent_forward:
             if header:
-                await self._send_text(message, header)
+                all_sent = await self._send_text(message, header) and all_sent
             for node in image_nodes:
                 segment = node[0]
                 if segment.get("type") == "text":
-                    await self._send_text(message, segment["data"]["text"])
+                    all_sent = await self._send_text(message, segment["data"]["text"]) and all_sent
                 elif segment.get("type") == "image":
-                    await self._send_image(message, self._path_from_file_segment(segment))
+                    all_sent = await self._send_image(message, self._path_from_file_segment(segment)) and all_sent
 
         if self.config.parser.send_video:
             for video in videos[:1]:
@@ -365,8 +370,10 @@ class MultiPlatformParserPlugin(MaiBotPlugin):
                     path = await video.get_path()
                 except Exception as exc:
                     self.ctx.logger.warning("Skipping unavailable video: %s", exc)
+                    all_sent = False
                     continue
-                await self._send_video(message, path)
+                all_sent = await self._send_video(message, path) and all_sent
+        return all_sent
 
     async def _send_text(self, message: dict[str, Any], text: str) -> bool:
         if self.config.plugin.dry_run:
@@ -418,18 +425,27 @@ class MultiPlatformParserPlugin(MaiBotPlugin):
         )
 
     def _format_header(self, result: ParseResult) -> str:
-        parts = [f"{result.platform.display_name}解析"]
-        if result.author and result.author.name:
-            parts.append(f"作者：{result.author.name}")
+        parts: list[str] = []
         if result.title:
             parts.append(f"标题：{self._truncate(result.title, 120)}")
+        if result.author and result.author.name:
+            author = result.author.name
+            if result.author.profile_url:
+                author += f" ({result.author.profile_url})"
+            parts.append(f"作者：{author}")
         if result.text:
             parts.append(self._truncate(result.text, self.config.parser.max_text_chars))
         if result.extra_info:
             parts.append(str(result.extra_info))
         if result.url:
-            parts.append(f"链接：{result.url}")
+            parts.append(f"链接：{self._display_url(result.url)}")
         return "\n".join(part for part in parts if part)
+
+    @staticmethod
+    def _display_url(url: str) -> str:
+        """Display canonical content URLs without share tracking parameters."""
+        parsed = urllib.parse.urlsplit(url)
+        return urllib.parse.urlunsplit((parsed.scheme, parsed.netloc, parsed.path, "", ""))
 
     def _flatten_contents(self, result: ParseResult) -> list[Any]:
         contents: list[Any] = []

@@ -148,6 +148,8 @@ class Author:
     """作者头像 URL 或本地路径"""
     description: str | None = None
     """作者个性签名等"""
+    profile_url: str | None = None
+    """作者公开主页链接"""
 
     async def get_avatar_path(self) -> Path | None:
         if self.avatar is None:

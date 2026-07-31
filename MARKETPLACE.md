@@ -4,7 +4,7 @@ MaiBot 第三方插件。自动识别社交媒体链接，提供摘要、封面�
 
 仓库：https://github.com/Powdered-Delta/maibot-social-link-parser
 
-当前版本：`0.1.2`
+当前版本：`0.1.3`
 
 ## 推荐分类
 

@@ -83,6 +83,7 @@ class XHSParser(BaseParser):
         class User(Struct):
             nickname: str
             avatar: str
+            userId: str = ""
 
         class NoteDetail(Struct):
             type: str
@@ -124,7 +125,11 @@ class XHSParser(BaseParser):
             contents.extend(self.create_image_contents(image_urls))
 
         # 构建作者
-        author = self.create_author(note_detail.nickname, note_detail.avatar_url)
+        author = self.create_author(
+            note_detail.nickname,
+            note_detail.avatar_url,
+            profile_url=self._profile_url(note_detail.user.userId),
+        )
 
         return self.result(
             title=note_detail.title,
@@ -157,6 +162,7 @@ class XHSParser(BaseParser):
         class User(Struct):
             nickName: str
             avatar: str
+            userId: str = ""
 
         class NoteData(Struct):
             type: str
@@ -202,7 +208,11 @@ class XHSParser(BaseParser):
 
         return self.result(
             title=note_data.title,
-            author=self.create_author(note_data.user.nickName, note_data.user.avatar),
+            author=self.create_author(
+                note_data.user.nickName,
+                note_data.user.avatar,
+                profile_url=self._profile_url(note_data.user.userId),
+            ),
             contents=contents,
             text=note_data.desc,
             timestamp=note_data.time // 1000,
@@ -216,6 +226,13 @@ class XHSParser(BaseParser):
 
         json_str = matched.group(1).replace("undefined", "null")
         return json.loads(json_str)
+
+    @staticmethod
+    def _profile_url(user_id: str) -> str | None:
+        user_id = str(user_id or "").strip()
+        if not user_id:
+            return None
+        return f"https://www.xiaohongshu.com/user/profile/{user_id}"
 
 
 class Stream(Struct):

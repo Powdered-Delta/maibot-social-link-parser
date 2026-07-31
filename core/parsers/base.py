@@ -226,6 +226,7 @@ class BaseParser:
         name: str,
         avatar_url: str | None = None,
         description: str | None = None,
+        profile_url: str | None = None,
         headers: dict[str, str] | None = None,
     ):
         """创建作者对象"""
@@ -235,7 +236,12 @@ class BaseParser:
             avatar_task = self.downloader.download_img.__wrapped__(self.downloader,
                 avatar_url, headers=headers or self.headers, proxy=self.proxy
             )
-        return Author(name=name, avatar=avatar_task, description=description)
+        return Author(
+            name=name,
+            avatar=avatar_task,
+            description=description,
+            profile_url=profile_url,
+        )
 
     def create_video_content(
         self,
