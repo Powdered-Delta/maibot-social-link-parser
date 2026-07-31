@@ -1,3 +1,4 @@
+import html
 import json
 import re
 from typing import Any, ClassVar
@@ -120,8 +121,8 @@ class XHSParser(BaseParser):
             contents.append(self.create_video_content(video_url, cover_url))
 
         # 添加图片内容
-        elif image_urls := note_detail.image_urls:
-            contents.extend(self.create_image_contents(image_urls))
+        else:
+            contents.extend(self._create_gallery_contents(note_data))
 
         # 构建作者
         author = self.create_author(
@@ -271,7 +272,7 @@ class XHSParser(BaseParser):
         for image in images:
             if not isinstance(image, dict):
                 continue
-            image_url = self._find_cover_url(image)
+            image_url = self._original_image_url(image)
             dynamic_url = self._find_dynamic_url(image)
             if dynamic_url:
                 contents.append(self.create_video_content(dynamic_url, image_url))
@@ -280,27 +281,64 @@ class XHSParser(BaseParser):
         return contents
 
     @staticmethod
+    def _original_image_url(image: dict[str, Any]) -> str | None:
+        """Use the original image URL instead of XHS's watermarked `!` variant."""
+        for key in ("urlDefault", "url", "urlSizeLarge", "urlPre"):
+            value = image.get(key)
+            if not isinstance(value, str):
+                continue
+            url = html.unescape(value).strip()
+            if url.startswith("//"):
+                url = f"https:{url}"
+            if url.startswith(("http://", "https://")):
+                return url.split("!", 1)[0]
+        return None
+
+    @staticmethod
     def _find_dynamic_url(data: dict[str, Any]) -> str | None:
         """Extract a Live Photo/video URL without mistaking its still image for media."""
-        media_keys = ("livePhoto", "livePhotoInfo", "video", "videoInfo", "stream")
-        url_keys = ("masterUrl", "playUrl", "videoUrl", "url")
+        for key in ("livePhotoUrl", "live_photo_url"):
+            if url := XHSParser._media_url(data.get(key)):
+                return url
 
-        def find(value: Any) -> str | None:
+        containers = [data]
+        for key in ("livePhoto", "livePhotoInfo", "video", "videoInfo"):
+            value = data.get(key)
             if isinstance(value, dict):
-                for key in url_keys:
-                    candidate = value.get(key)
-                    if isinstance(candidate, str) and candidate.startswith(("http://", "https://")):
-                        return candidate
-                for key in media_keys:
-                    if (found := find(value.get(key))) is not None:
-                        return found
-            elif isinstance(value, list):
-                for candidate in value:
-                    if (found := find(candidate)) is not None:
-                        return found
-            return None
+                containers.append(value)
 
-        return find({key: data.get(key) for key in media_keys})
+        for container in containers:
+            for key in ("playUrl", "videoUrl", "masterUrl"):
+                if url := XHSParser._media_url(container.get(key)):
+                    return url
+            stream = container.get("stream")
+            if not isinstance(stream, dict):
+                continue
+            for codec in ("h265", "h264", "av1", "h266"):
+                stream_items = stream.get(codec)
+                if not isinstance(stream_items, list):
+                    continue
+                for item in stream_items:
+                    if not isinstance(item, dict):
+                        continue
+                    for key in ("masterUrl", "playUrl", "videoUrl", "url", "backupUrl"):
+                        if url := XHSParser._media_url(item.get(key)):
+                            return url
+                    backup_urls = item.get("backupUrls")
+                    if isinstance(backup_urls, list):
+                        for value in backup_urls:
+                            if url := XHSParser._media_url(value):
+                                return url
+        return None
+
+    @staticmethod
+    def _media_url(value: Any) -> str | None:
+        if not isinstance(value, str):
+            return None
+        url = html.unescape(value).strip()
+        if url.startswith("//"):
+            url = f"https:{url}"
+        return url if url.startswith(("http://", "https://")) else None
 
 
 class Stream(Struct):
