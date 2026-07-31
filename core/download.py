@@ -1,5 +1,6 @@
 from asyncio import Task, TimeoutError, create_task, gather, sleep, to_thread
 from collections.abc import Callable, Coroutine
+from contextvars import ContextVar, Token
 from functools import wraps
 from pathlib import Path
 from typing import Any, ParamSpec, TypeVar
@@ -25,6 +26,19 @@ from .utils import LimitedSizeDict, generate_file_name, merge_av, safe_unlink
 
 P = ParamSpec("P")
 T = TypeVar("T")
+DownloadProgressCallback = Callable[[int, int | None], None]
+_download_progress_callback: ContextVar[DownloadProgressCallback | None] = ContextVar(
+    "download_progress_callback", default=None
+)
+
+
+def set_download_progress_callback(callback: DownloadProgressCallback | None) -> Token[DownloadProgressCallback | None]:
+    """Attach a progress observer to downloads created in the current task context."""
+    return _download_progress_callback.set(callback)
+
+
+def reset_download_progress_callback(token: Token[DownloadProgressCallback | None]) -> None:
+    _download_progress_callback.reset(token)
 
 
 def auto_task(func: Callable[P, Coroutine[Any, Any, T]]) -> Callable[P, Task[T]]:
@@ -128,6 +142,8 @@ class Downloader:
                         raise SizeLimitException
 
                     downloaded = existing_size
+                    if callback := _download_progress_callback.get():
+                        callback(downloaded, total_size)
                     with self.get_progress_bar(file_name, total_size) as bar:
                         if existing_size:
                             bar.update(existing_size)
@@ -136,6 +152,8 @@ class Downloader:
                                 1024 * 1024
                             ):
                                 downloaded += len(chunk)
+                                if callback := _download_progress_callback.get():
+                                    callback(downloaded, total_size)
                                 if downloaded > max_bytes:
                                     raise SizeLimitException
                                 await file.write(chunk)

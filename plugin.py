@@ -21,7 +21,7 @@ if str(PLUGIN_DIR) not in sys.path:
 
 from .core.config import PluginConfig as CorePluginConfig
 from .core.data import DynamicContent, GraphicsContent, ImageContent, ParseResult, TextContent, VideoContent
-from .core.download import Downloader
+from .core.download import Downloader, reset_download_progress_callback, set_download_progress_callback
 from .core.exception import ParseException
 from .core.parsers import BaseParser
 from .sender import (
@@ -68,8 +68,8 @@ class PluginSectionConfig(PluginConfigBase):
     __ui_order__: ClassVar[int] = 0
 
     name: str = Field(default="maibot_social_link_parser", description="插件内部名称", json_schema_extra=_ui("插件内部名称", "仅用于标识配置；通常无需修改。", 0, label_en="Internal name", hint_en="Used only to identify this configuration. Usually leave unchanged.", label_ja="内部名", hint_ja="設定識別用です。通常は変更不要です。", disabled=True))
-    config_version: str = Field(default="0.1.12", description="配置文件版本", json_schema_extra=_ui("配置版本", "由插件用于补齐配置字段，请勿手动修改。", 1, label_en="Configuration version", hint_en="Used to merge configuration fields. Do not edit manually.", label_ja="設定バージョン", hint_ja="設定項目の統合に使用します。手動で変更しないでください。", disabled=True))
-    version: str = Field(default="0.1.12", description="插件版本", json_schema_extra=_ui("插件版本", "当前插件版本，仅供查看。", 2, label_en="Plugin version", hint_en="Current plugin version. Read only.", label_ja="プラグインバージョン", hint_ja="現在のプラグインバージョンです。読み取り専用です。", disabled=True))
+    config_version: str = Field(default="0.1.13", description="配置文件版本", json_schema_extra=_ui("配置版本", "由插件用于补齐配置字段，请勿手动修改。", 1, label_en="Configuration version", hint_en="Used to merge configuration fields. Do not edit manually.", label_ja="設定バージョン", hint_ja="設定項目の統合に使用します。手動で変更しないでください。", disabled=True))
+    version: str = Field(default="0.1.13", description="插件版本", json_schema_extra=_ui("插件版本", "当前插件版本，仅供查看。", 2, label_en="Plugin version", hint_en="Current plugin version. Read only.", label_ja="プラグインバージョン", hint_ja="現在のプラグインバージョンです。読み取り専用です。", disabled=True))
     enabled: bool = Field(default=True, description="是否启用插件", json_schema_extra=_ui("启用插件", "关闭后不再识别或处理社媒链接。", 3, label_en="Enable plugin", hint_en="When disabled, social media links are not detected or handled.", label_ja="プラグインを有効化", hint_ja="無効時はソーシャルメディアのリンクを処理しません。"))
     dry_run: bool = Field(default=False, description="演练模式", json_schema_extra=_ui("演练模式", "不向 QQ/NapCat 发送任何消息，仅记录拟发送内容；仍会下载媒体，可能消耗流量和磁盘。", 4, label_en="Dry run", hint_en="Prevents all QQ/NapCat sends and logs intended output. Downloads still run and use bandwidth and disk.", label_ja="ドライラン", hint_ja="QQ/NapCat への送信を行わず、送信予定をログに出します。ダウンロードは実行されます。"))
 
@@ -294,6 +294,17 @@ class MultiPlatformParserPlugin(MaiBotPlugin):
             await self._send_text(message, "这个链接解析失败了，请稍后重试。")
 
     async def _download_pending_task(self, pending: PendingDownload, message: dict[str, Any]) -> None:
+        progress = {"downloaded": 0, "total": None}
+        started_at = time.monotonic()
+
+        def update_progress(downloaded: int, total: int | None) -> None:
+            progress["downloaded"] = downloaded
+            progress["total"] = total
+
+        heartbeat = self._create_task(
+            self._download_heartbeat(message, progress, started_at), "link_resolver.download_heartbeat"
+        )
+        callback_token = set_download_progress_callback(update_progress)
         try:
             result = await pending.parser.parse(pending.keyword, pending.searched)
             if not result.url:
@@ -303,6 +314,30 @@ class MultiPlatformParserPlugin(MaiBotPlugin):
         except Exception as exc:
             self.ctx.logger.warning("Confirmed media download failed for %s: %s", pending.url, exc)
             await self._send_text(message, "媒体下载失败，请稍后重试。")
+        finally:
+            reset_download_progress_callback(callback_token)
+            heartbeat.cancel()
+
+    async def _download_heartbeat(self, message: dict[str, Any], progress: dict[str, int | None], started_at: float) -> None:
+        """Report long confirmed downloads without interrupting imminent completions."""
+        await asyncio.sleep(60)
+        while True:
+            elapsed = max(1.0, time.monotonic() - started_at)
+            downloaded = int(progress["downloaded"] or 0)
+            total = progress["total"]
+            if isinstance(total, int) and total > 0 and downloaded > 0:
+                remaining = max(0, total - downloaded)
+                eta = remaining / (downloaded / elapsed)
+                if eta > 20:
+                    await self._send_text(
+                        message,
+                        f"仍在下载：{downloaded / 1024 / 1024:.1f}/{total / 1024 / 1024:.1f} MB，预计约 {int(eta)} 秒。",
+                    )
+            elif downloaded > 0:
+                await self._send_text(message, f"仍在下载：已完成 {downloaded / 1024 / 1024:.1f} MB，已等待 {int(elapsed)} 秒。")
+            else:
+                await self._send_text(message, f"仍在准备下载，已等待 {int(elapsed)} 秒。")
+            await asyncio.sleep(45)
 
     async def _send_overview(self, message: dict[str, Any], result: ParseResult) -> None:
         """Send metadata and one preview only; full media waits for user confirmation."""
@@ -674,10 +709,11 @@ class MultiPlatformParserPlugin(MaiBotPlugin):
             return "好的，开始下载。"
         return f"好的，开始下载最新一条：{pending.title}\n当前待下载队列共 {queue_size} 条，剩余 {queue_size - 1} 条。"
 
-    def _create_task(self, coroutine: Any, name: str) -> None:
+    def _create_task(self, coroutine: Any, name: str) -> asyncio.Task[Any]:
         task = asyncio.create_task(coroutine, name=name)
         self._tasks.add(task)
         task.add_done_callback(self._tasks.discard)
+        return task
 
     def _session_id(self, message: dict[str, Any]) -> str:
         return str(message.get("session_id", "") or self._group_or_user_id(message) or "unknown")
