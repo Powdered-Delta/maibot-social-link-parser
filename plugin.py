@@ -68,8 +68,8 @@ class PluginSectionConfig(PluginConfigBase):
     __ui_order__: ClassVar[int] = 0
 
     name: str = Field(default="maibot_social_link_parser", description="插件内部名称", json_schema_extra=_ui("插件内部名称", "仅用于标识配置；通常无需修改。", 0, label_en="Internal name", hint_en="Used only to identify this configuration. Usually leave unchanged.", label_ja="内部名", hint_ja="設定識別用です。通常は変更不要です。", disabled=True))
-    config_version: str = Field(default="0.1.8", description="配置文件版本", json_schema_extra=_ui("配置版本", "由插件用于补齐配置字段，请勿手动修改。", 1, label_en="Configuration version", hint_en="Used to merge configuration fields. Do not edit manually.", label_ja="設定バージョン", hint_ja="設定項目の統合に使用します。手動で変更しないでください。", disabled=True))
-    version: str = Field(default="0.1.8", description="插件版本", json_schema_extra=_ui("插件版本", "当前插件版本，仅供查看。", 2, label_en="Plugin version", hint_en="Current plugin version. Read only.", label_ja="プラグインバージョン", hint_ja="現在のプラグインバージョンです。読み取り専用です。", disabled=True))
+    config_version: str = Field(default="0.1.9", description="配置文件版本", json_schema_extra=_ui("配置版本", "由插件用于补齐配置字段，请勿手动修改。", 1, label_en="Configuration version", hint_en="Used to merge configuration fields. Do not edit manually.", label_ja="設定バージョン", hint_ja="設定項目の統合に使用します。手動で変更しないでください。", disabled=True))
+    version: str = Field(default="0.1.9", description="插件版本", json_schema_extra=_ui("插件版本", "当前插件版本，仅供查看。", 2, label_en="Plugin version", hint_en="Current plugin version. Read only.", label_ja="プラグインバージョン", hint_ja="現在のプラグインバージョンです。読み取り専用です。", disabled=True))
     enabled: bool = Field(default=True, description="是否启用插件", json_schema_extra=_ui("启用插件", "关闭后不再识别或处理社媒链接。", 3, label_en="Enable plugin", hint_en="When disabled, social media links are not detected or handled.", label_ja="プラグインを有効化", hint_ja="無効時はソーシャルメディアのリンクを処理しません。"))
     dry_run: bool = Field(default=False, description="演练模式", json_schema_extra=_ui("演练模式", "不向 QQ/NapCat 发送任何消息，仅记录拟发送内容；仍会下载媒体，可能消耗流量和磁盘。", 4, label_en="Dry run", hint_en="Prevents all QQ/NapCat sends and logs intended output. Downloads still run and use bandwidth and disk.", label_ja="ドライラン", hint_ja="QQ/NapCat への送信を行わず、送信予定をログに出します。ダウンロードは実行されます。"))
 
@@ -318,6 +318,7 @@ class MultiPlatformParserPlugin(MaiBotPlugin):
         media_items = self._flatten_contents(result)
         # Full-media sends never use the author avatar. Close its lazy download coroutine.
         self._cancel_author_avatar(result)
+        self._cancel_video_covers(media_items)
 
         if any(isinstance(content, (VideoContent, DynamicContent)) for content in media_items):
             return await self._send_media_in_order(message, media_items, header)
@@ -579,6 +580,18 @@ class MultiPlatformParserPlugin(MaiBotPlugin):
             candidate.cancel()
         elif hasattr(candidate, "close"):
             candidate.close()
+
+    @staticmethod
+    def _cancel_video_covers(contents: list[Any]) -> None:
+        """Full-media sends do not use preview covers, so release their coroutines."""
+        for content in contents:
+            if not isinstance(content, VideoContent):
+                continue
+            candidate = content.cover
+            if isinstance(candidate, asyncio.Task) and not candidate.done():
+                candidate.cancel()
+            elif hasattr(candidate, "close"):
+                candidate.close()
 
     def _store_pending_download(self, message: dict[str, Any], parser: BaseParser, keyword: str, searched: Any, url: str) -> None:
         sender_id = self._get_user_id(message)

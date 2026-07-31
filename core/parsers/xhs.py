@@ -1,6 +1,7 @@
 import html
 import json
 import re
+import urllib.parse
 from typing import Any, ClassVar
 
 from msgspec import Struct, convert, field
@@ -291,20 +292,57 @@ class XHSParser(BaseParser):
         return content
 
     async def _download_xhs_image(self, original_url: str, fallback_url: str | None = None):
-        """Try the original CDN object first, then retain a displayable fallback."""
+        """Try XHS original-image CDNs before retaining a displayable fallback."""
         headers = self._media_headers()
-        try:
-            return await self.downloader.download_img(
-                original_url, headers=headers, proxy=self.proxy
-            )
-        except Exception as exc:
-            fallback_url = self._image_url_from_value(fallback_url or "")
-            if not fallback_url or fallback_url == original_url:
-                raise
-            logger.warning("XHS original image rejected, using display fallback: %s", exc)
+        candidates = self._original_image_candidates(original_url)
+        last_error: Exception | None = None
+        for candidate in candidates:
+            try:
+                return await self.downloader.download_img(
+                    candidate, headers=headers, proxy=self.proxy
+                )
+            except Exception as exc:
+                last_error = exc
+
+        fallback_url = self._image_url_from_value(fallback_url or "")
+        if fallback_url and fallback_url not in candidates:
+            logger.warning("XHS original image rejected, using display fallback: %s", last_error)
             return await self.downloader.download_img(
                 fallback_url, headers=headers, proxy=self.proxy
             )
+        if last_error is not None:
+            raise last_error
+        raise RuntimeError("XHS image has no usable download URL")
+
+    @staticmethod
+    def _original_image_candidates(url: str) -> list[str]:
+        """Build the original-image candidates used by XHS's public image CDNs."""
+        token = XHSParser._image_token(url)
+        if not token:
+            return [url]
+        candidates = [
+            f"https://ci.xiaohongshu.com/{token}?imageView2/format/png",
+            *(
+                f"https://{domain}/{token}"
+                for domain in (
+                    "sns-img-bd.xhscdn.com",
+                    "sns-img-qc.xhscdn.com",
+                    "sns-img-hw.xhscdn.com",
+                )
+            ),
+            url,
+        ]
+        return list(dict.fromkeys(candidates))
+
+    @staticmethod
+    def _image_token(url: str) -> str | None:
+        path = urllib.parse.urlsplit(url).path.strip("/")
+        if not path:
+            return None
+        parts = path.split("/")
+        if len(parts) >= 4:
+            return "/".join(parts[2:])
+        return parts[-1] if len(parts[-1]) > 10 else None
 
     def _media_headers(self) -> dict[str, str]:
         return {**self.headers, "Referer": "https://www.xiaohongshu.com/"}
