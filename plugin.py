@@ -68,8 +68,8 @@ class PluginSectionConfig(PluginConfigBase):
     __ui_order__: ClassVar[int] = 0
 
     name: str = Field(default="maibot_social_link_parser", description="插件内部名称", json_schema_extra=_ui("插件内部名称", "仅用于标识配置；通常无需修改。", 0, label_en="Internal name", hint_en="Used only to identify this configuration. Usually leave unchanged.", label_ja="内部名", hint_ja="設定識別用です。通常は変更不要です。", disabled=True))
-    config_version: str = Field(default="0.1.9", description="配置文件版本", json_schema_extra=_ui("配置版本", "由插件用于补齐配置字段，请勿手动修改。", 1, label_en="Configuration version", hint_en="Used to merge configuration fields. Do not edit manually.", label_ja="設定バージョン", hint_ja="設定項目の統合に使用します。手動で変更しないでください。", disabled=True))
-    version: str = Field(default="0.1.9", description="插件版本", json_schema_extra=_ui("插件版本", "当前插件版本，仅供查看。", 2, label_en="Plugin version", hint_en="Current plugin version. Read only.", label_ja="プラグインバージョン", hint_ja="現在のプラグインバージョンです。読み取り専用です。", disabled=True))
+    config_version: str = Field(default="0.1.10", description="配置文件版本", json_schema_extra=_ui("配置版本", "由插件用于补齐配置字段，请勿手动修改。", 1, label_en="Configuration version", hint_en="Used to merge configuration fields. Do not edit manually.", label_ja="設定バージョン", hint_ja="設定項目の統合に使用します。手動で変更しないでください。", disabled=True))
+    version: str = Field(default="0.1.10", description="插件版本", json_schema_extra=_ui("插件版本", "当前插件版本，仅供查看。", 2, label_en="Plugin version", hint_en="Current plugin version. Read only.", label_ja="プラグインバージョン", hint_ja="現在のプラグインバージョンです。読み取り専用です。", disabled=True))
     enabled: bool = Field(default=True, description="是否启用插件", json_schema_extra=_ui("启用插件", "关闭后不再识别或处理社媒链接。", 3, label_en="Enable plugin", hint_en="When disabled, social media links are not detected or handled.", label_ja="プラグインを有効化", hint_ja="無効時はソーシャルメディアのリンクを処理しません。"))
     dry_run: bool = Field(default=False, description="演练模式", json_schema_extra=_ui("演练模式", "不向 QQ/NapCat 发送任何消息，仅记录拟发送内容；仍会下载媒体，可能消耗流量和磁盘。", 4, label_en="Dry run", hint_en="Prevents all QQ/NapCat sends and logs intended output. Downloads still run and use bandwidth and disk.", label_ja="ドライラン", hint_ja="QQ/NapCat への送信を行わず、送信予定をログに出します。ダウンロードは実行されます。"))
 
@@ -169,6 +169,7 @@ class PendingDownload:
     keyword: str
     searched: Any
     url: str
+    title: str
     expires_at: float
 
 
@@ -181,7 +182,7 @@ class MultiPlatformParserPlugin(MaiBotPlugin):
     _downloader: Downloader | None = None
     _parsers: list[BaseParser] = []
     _recent: dict[tuple[str, str], float] = {}
-    _pending_downloads: dict[tuple[str, str], PendingDownload] = {}
+    _pending_downloads: dict[tuple[str, str], list[PendingDownload]] = {}
     _tasks: set[asyncio.Task[Any]] = set()
 
     async def on_load(self) -> None:
@@ -238,11 +239,14 @@ class MultiPlatformParserPlugin(MaiBotPlugin):
         candidates = self._extract_urls(source)
         session_id = self._session_id(message)
         sender_id = self._get_user_id(message)
-        if not candidates and self._is_download_confirmation(source):
-            pending = self._consume_pending_download(session_id, sender_id)
+        if self._is_download_confirmation(source):
+            pending, choices = self._consume_pending_download(session_id, sender_id, source)
             if pending is not None:
                 await self._send_text(message, "好的，开始下载。")
                 self._create_task(self._download_pending_task(pending, message), "link_resolver.download")
+                return {"action": "abort"} if self.config.parser.block_ai_reply else None
+            if choices:
+                await self._send_text(message, self._pending_choice_prompt(choices))
                 return {"action": "abort"} if self.config.parser.block_ai_reply else None
         matched: tuple[BaseParser, str, Any, str] | None = None
         for url in candidates:
@@ -282,7 +286,7 @@ class MultiPlatformParserPlugin(MaiBotPlugin):
                     await self._send_text(message, "原媒体下载或发送失败，请稍后重试。")
                 return
             await self._send_overview(message, result)
-            self._store_pending_download(message, parser, keyword, searched, url)
+            self._store_pending_download(message, parser, keyword, searched, url, result.title)
         except Exception as exc:
             self.ctx.logger.warning("Multi platform parser failed for %s: %s", url, exc)
             await self._send_text(message, "这个链接解析失败了，请稍后重试。")
@@ -593,30 +597,66 @@ class MultiPlatformParserPlugin(MaiBotPlugin):
             elif hasattr(candidate, "close"):
                 candidate.close()
 
-    def _store_pending_download(self, message: dict[str, Any], parser: BaseParser, keyword: str, searched: Any, url: str) -> None:
+    def _store_pending_download(self, message: dict[str, Any], parser: BaseParser, keyword: str, searched: Any, url: str, title: str | None) -> None:
         sender_id = self._get_user_id(message)
         if not sender_id:
             return
-        self._pending_downloads[(self._session_id(message), sender_id)] = PendingDownload(
+        key = (self._session_id(message), sender_id)
+        pending = PendingDownload(
             parser=parser,
             keyword=keyword,
             searched=searched,
             url=url,
+            title=self._truncate(title or "未命名内容", 40),
             expires_at=time.time() + self.config.parser.pending_download_ttl_seconds,
         )
+        entries = [entry for entry in self._pending_downloads.get(key, []) if entry.expires_at >= time.time() and entry.url != url]
+        entries.append(pending)
+        self._pending_downloads[key] = entries
 
-    def _consume_pending_download(self, session_id: str, sender_id: str | None) -> PendingDownload | None:
+    def _consume_pending_download(self, session_id: str, sender_id: str | None, source: str) -> tuple[PendingDownload | None, list[PendingDownload]]:
         if not sender_id:
-            return None
+            return None, []
         key = (session_id, sender_id)
-        pending = self._pending_downloads.pop(key, None)
-        if pending is None or pending.expires_at < time.time():
-            return None
-        return pending
+        entries = [entry for entry in self._pending_downloads.get(key, []) if entry.expires_at >= time.time()]
+        if not entries:
+            self._pending_downloads.pop(key, None)
+            return None, []
+
+        if selected := re.search(r"(?:下载|帮我下载|发视频|保存)\s*([1-9]\d*)", source):
+            index = int(selected.group(1)) - 1
+            if 0 <= index < len(entries):
+                pending = entries.pop(index)
+                if entries:
+                    self._pending_downloads[key] = entries
+                else:
+                    self._pending_downloads.pop(key, None)
+                return pending, []
+
+        matched = [entry for entry in entries if entry.url in source]
+        if len(matched) == 1:
+            pending = matched[0]
+            entries.remove(pending)
+            if entries:
+                self._pending_downloads[key] = entries
+            else:
+                self._pending_downloads.pop(key, None)
+            return pending, []
+        if len(entries) == 1:
+            self._pending_downloads.pop(key, None)
+            return entries[0], []
+        self._pending_downloads[key] = entries
+        return None, entries
 
     @staticmethod
     def _is_download_confirmation(text: str) -> bool:
-        return bool(re.search(r"(?:^|[，,。！!\s])(?:下载|帮我下载|发视频|保存)(?:[。！!\s]|$)", text.strip()))
+        return bool(re.search(r"(?:^|[，,。！!\s])(?:下载|帮我下载|发视频|保存)(?:\s*[1-9]\d*)?(?:[。！!\s]|$)", text.strip()))
+
+    @staticmethod
+    def _pending_choice_prompt(entries: list[PendingDownload]) -> str:
+        lines = ["有多条待下载内容，请回复“下载 序号”选择："]
+        lines.extend(f"{index}. {entry.title}" for index, entry in enumerate(entries, 1))
+        return "\n".join(lines)
 
     def _create_task(self, coroutine: Any, name: str) -> None:
         task = asyncio.create_task(coroutine, name=name)
