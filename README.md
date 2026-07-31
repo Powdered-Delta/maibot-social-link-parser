@@ -94,6 +94,7 @@ git clone git@github.com:Powdered-Delta/maibot-social-link-parser.git
 | `parser.enabled_platforms` | 抖音、小红书、小黑盒 | WebUI 多选平台开关；B站默认关闭 |
 | `parser.download_mode` | `confirm` | `confirm` 为确认下载，`automatic` 为自动下载 |
 | `parser.pending_download_ttl_seconds` | `600` | 等待用户确认下载的有效期，单位秒 |
+| `parser.pending_download_selection` | `latest` | 多条待下载内容时，`latest` 让“下载”选择最新一条；`number` 要求“下载 1”等明确编号 |
 | `parser.send_preview_image` | `true` | 概览是否发送视频封面或图集首图 |
 | `parser.reaction_emoji_enabled` | `true` | 识别链接后是否添加 QQ 表情回应 |
 | `parser.group_whitelist` | `[]` | 自动解析群白名单；空列表表示所有群 |

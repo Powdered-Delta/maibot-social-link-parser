@@ -68,8 +68,8 @@ class PluginSectionConfig(PluginConfigBase):
     __ui_order__: ClassVar[int] = 0
 
     name: str = Field(default="maibot_social_link_parser", description="插件内部名称", json_schema_extra=_ui("插件内部名称", "仅用于标识配置；通常无需修改。", 0, label_en="Internal name", hint_en="Used only to identify this configuration. Usually leave unchanged.", label_ja="内部名", hint_ja="設定識別用です。通常は変更不要です。", disabled=True))
-    config_version: str = Field(default="0.1.10", description="配置文件版本", json_schema_extra=_ui("配置版本", "由插件用于补齐配置字段，请勿手动修改。", 1, label_en="Configuration version", hint_en="Used to merge configuration fields. Do not edit manually.", label_ja="設定バージョン", hint_ja="設定項目の統合に使用します。手動で変更しないでください。", disabled=True))
-    version: str = Field(default="0.1.10", description="插件版本", json_schema_extra=_ui("插件版本", "当前插件版本，仅供查看。", 2, label_en="Plugin version", hint_en="Current plugin version. Read only.", label_ja="プラグインバージョン", hint_ja="現在のプラグインバージョンです。読み取り専用です。", disabled=True))
+    config_version: str = Field(default="0.1.11", description="配置文件版本", json_schema_extra=_ui("配置版本", "由插件用于补齐配置字段，请勿手动修改。", 1, label_en="Configuration version", hint_en="Used to merge configuration fields. Do not edit manually.", label_ja="設定バージョン", hint_ja="設定項目の統合に使用します。手動で変更しないでください。", disabled=True))
+    version: str = Field(default="0.1.11", description="插件版本", json_schema_extra=_ui("插件版本", "当前插件版本，仅供查看。", 2, label_en="Plugin version", hint_en="Current plugin version. Read only.", label_ja="プラグインバージョン", hint_ja="現在のプラグインバージョンです。読み取り専用です。", disabled=True))
     enabled: bool = Field(default=True, description="是否启用插件", json_schema_extra=_ui("启用插件", "关闭后不再识别或处理社媒链接。", 3, label_en="Enable plugin", hint_en="When disabled, social media links are not detected or handled.", label_ja="プラグインを有効化", hint_ja="無効時はソーシャルメディアのリンクを処理しません。"))
     dry_run: bool = Field(default=False, description="演练模式", json_schema_extra=_ui("演练模式", "不向 QQ/NapCat 发送任何消息，仅记录拟发送内容；仍会下载媒体，可能消耗流量和磁盘。", 4, label_en="Dry run", hint_en="Prevents all QQ/NapCat sends and logs intended output. Downloads still run and use bandwidth and disk.", label_ja="ドライラン", hint_ja="QQ/NapCat への送信を行わず、送信予定をログに出します。ダウンロードは実行されます。"))
 
@@ -103,11 +103,12 @@ class ParserSectionConfig(PluginConfigBase):
     use_forward_for_multi: bool = Field(default=True, description="群聊多图使用合并转发", json_schema_extra=_ui("群聊多图使用合并转发", "仅群聊生效。关闭后图片和失败占位符将逐条发送。", 8, label_en="Use group forward for galleries", hint_en="Groups only. When disabled, images and failure placeholders are sent one by one.", label_ja="ギャラリーを結合転送で送信", hint_ja="グループのみ有効です。無効時は画像と失敗表示を個別に送信します。"))
     download_mode: Literal["confirm", "automatic"] = Field(default="confirm", description="下载模式", json_schema_extra={**_ui("下载模式", "确认下载更适合生产群聊：先发概览，只有原发送者回复“下载”才下载完整媒体。自动下载会立即消耗带宽和存储。", 9, label_en="Download mode", hint_en="Confirm is safer for groups: send an overview first and download only after the original sender replies. Automatic download immediately uses bandwidth and storage.", label_ja="ダウンロードモード", hint_ja="確認モードはグループ向けです。概要を送信後、元の送信者の確認でダウンロードします。自動モードは即座に通信量とストレージを消費します。"), "widget": "select", "options": [{"label": "确认后下载", "value": "confirm"}, {"label": "自动下载", "value": "automatic"}]})
     pending_download_ttl_seconds: int = Field(default=600, description="等待确认有效期", ge=60, le=3600, json_schema_extra=_ui("等待确认有效期（秒）", "确认下载任务过期后需要重新发送链接。", 10, label_en="Confirmation expiry (seconds)", hint_en="After expiration, send the link again to create a new download request.", label_ja="確認の有効期限（秒）", hint_ja="期限切れ後は、新しいダウンロード要求を作るためにリンクを再送してください。"))
-    send_preview_image: bool = Field(default=True, description="是否发送封面或首图预览", json_schema_extra=_ui("发送封面或首图预览", "确认模式下下载视频封面或图集首图，用于让用户在完整下载前确认内容。", 11, label_en="Send cover or first-image preview", hint_en="In confirm mode, download a video cover or first gallery image so users can verify content before the full download.", label_ja="カバーまたは先頭画像のプレビューを送信", hint_ja="確認モードでは、完全なダウンロード前に内容を確認できるよう動画カバーまたは先頭画像を取得します。"))
-    reaction_emoji_enabled: bool = Field(default=True, description="识别后表情回应", json_schema_extra=_ui("识别后表情回应", "对群聊原消息调用 NapCat 表情回应 API；私聊不会执行。", 12, label_en="React after recognition", hint_en="Calls NapCat's reaction API for the original group message. It is not used in private chats.", label_ja="認識後にリアクション", hint_ja="元のグループメッセージに NapCat のリアクション API を使用します。個別チャットでは実行しません。"))
-    reaction_emoji_id: int = Field(default=76, description="QQ 表情回应 ID", ge=1, json_schema_extra=_ui("QQ 表情回应 ID", "NapCat `set_msg_emoji_like` 使用的数字表情 ID。仅在已启用表情回应时生效。", 13, label_en="QQ reaction emoji ID", hint_en="Numeric emoji ID for NapCat set_msg_emoji_like. Used only when reactions are enabled.", label_ja="QQ リアクション絵文字 ID", hint_ja="NapCat set_msg_emoji_like に使用する数値 ID です。リアクション有効時のみ使用します。"))
-    source_max_size_mb: int = Field(default=80, description="单媒体最大下载大小", ge=1, le=300, json_schema_extra=_ui("单媒体最大下载大小（MB）", "单个图片、视频或音频超过此值会被拒绝下载。提高该值会增加磁盘、网络和 QQ 发送失败风险。", 14, label_en="Maximum media size (MB)", hint_en="Images, videos, or audio above this size are not downloaded. Increasing it raises disk, bandwidth, and QQ delivery failure risk.", label_ja="メディア最大サイズ（MB）", hint_ja="このサイズを超える画像、動画、音声はダウンロードしません。増やすとディスク、通信量、QQ 送信失敗のリスクが上がります。"))
-    source_max_minutes: int = Field(default=8, description="视频最大时长", ge=1, le=60, json_schema_extra=_ui("视频最大时长（分钟）", "超过此时长的视频不下载，避免意外的大文件任务。", 15, label_en="Maximum video duration (minutes)", hint_en="Longer videos are not downloaded to avoid unexpected large jobs.", label_ja="動画の最大時間（分）", hint_ja="予期しない大きなタスクを避けるため、この時間を超える動画はダウンロードしません。"))
+    pending_download_selection: Literal["latest", "number"] = Field(default="latest", description="多条待下载内容的选择方式", json_schema_extra={**_ui("多条待下载内容的选择方式", "默认“下载”会下载同一会话内最新一条内容，并在开始消息中说明队列情况。选择“回复编号”后，存在多条内容时必须回复“下载 1”“下载 2”等明确编号。当前消息网关未向插件稳定提供回复目标 ID，因此无法可靠按 QQ 回复引用选择。", 11, label_en="Multiple pending-download selection", hint_en="By default, Download selects the newest item in the same session and reports queue state. Choose Number to require Download 1, Download 2, etc. The current gateway does not reliably expose reply target IDs to plugins, so QQ reply references cannot be used safely yet.", label_ja="複数待機ダウンロードの選択方法", hint_ja="既定では、ダウンロードは同一セッション内の最新項目を選び、キュー状態を通知します。番号指定では「ダウンロード 1」などが必要です。現在のゲートウェイは返信先 ID をプラグインに安定して渡さないため、QQ の返信引用はまだ安全に利用できません。"), "widget": "select", "options": [{"label": "最新一条（默认）", "value": "latest"}, {"label": "回复编号", "value": "number"}]})
+    send_preview_image: bool = Field(default=True, description="是否发送封面或首图预览", json_schema_extra=_ui("发送封面或首图预览", "确认模式下下载视频封面或图集首图，用于让用户在完整下载前确认内容。", 12, label_en="Send cover or first-image preview", hint_en="In confirm mode, download a video cover or first gallery image so users can verify content before the full download.", label_ja="カバーまたは先頭画像のプレビューを送信", hint_ja="確認モードでは、完全なダウンロード前に内容を確認できるよう動画カバーまたは先頭画像を取得します。"))
+    reaction_emoji_enabled: bool = Field(default=True, description="识别后表情回应", json_schema_extra=_ui("识别后表情回应", "对群聊原消息调用 NapCat 表情回应 API；私聊不会执行。", 13, label_en="React after recognition", hint_en="Calls NapCat's reaction API for the original group message. It is not used in private chats.", label_ja="認識後にリアクション", hint_ja="元のグループメッセージに NapCat のリアクション API を使用します。個別チャットでは実行しません。"))
+    reaction_emoji_id: int = Field(default=76, description="QQ 表情回应 ID", ge=1, json_schema_extra=_ui("QQ 表情回应 ID", "NapCat `set_msg_emoji_like` 使用的数字表情 ID。仅在已启用表情回应时生效。", 14, label_en="QQ reaction emoji ID", hint_en="Numeric emoji ID for NapCat set_msg_emoji_like. Used only when reactions are enabled.", label_ja="QQ リアクション絵文字 ID", hint_ja="NapCat set_msg_emoji_like に使用する数値 ID です。リアクション有効時のみ使用します。"))
+    source_max_size_mb: int = Field(default=80, description="单媒体最大下载大小", ge=1, le=300, json_schema_extra=_ui("单媒体最大下载大小（MB）", "单个图片、视频或音频超过此值会被拒绝下载。提高该值会增加磁盘、网络和 QQ 发送失败风险。", 15, label_en="Maximum media size (MB)", hint_en="Images, videos, or audio above this size are not downloaded. Increasing it raises disk, bandwidth, and QQ delivery failure risk.", label_ja="メディア最大サイズ（MB）", hint_ja="このサイズを超える画像、動画、音声はダウンロードしません。増やすとディスク、通信量、QQ 送信失敗のリスクが上がります。"))
+    source_max_minutes: int = Field(default=8, description="视频最大时长", ge=1, le=60, json_schema_extra=_ui("视频最大时长（分钟）", "超过此时长的视频不下载，避免意外的大文件任务。", 16, label_en="Maximum video duration (minutes)", hint_en="Longer videos are not downloaded to avoid unexpected large jobs.", label_ja="動画の最大時間（分）", hint_ja="予期しない大きなタスクを避けるため、この時間を超える動画はダウンロードしません。"))
 
 
 class NetworkSectionConfig(PluginConfigBase):
@@ -240,9 +241,9 @@ class MultiPlatformParserPlugin(MaiBotPlugin):
         session_id = self._session_id(message)
         sender_id = self._get_user_id(message)
         if self._is_download_confirmation(source):
-            pending, choices = self._consume_pending_download(session_id, sender_id, source)
+            pending, choices, queue_size = self._consume_pending_download(session_id, sender_id, source)
             if pending is not None:
-                await self._send_text(message, "好的，开始下载。")
+                await self._send_text(message, self._download_started_text(pending, queue_size))
                 self._create_task(self._download_pending_task(pending, message), "link_resolver.download")
                 return {"action": "abort"} if self.config.parser.block_ai_reply else None
             if choices:
@@ -614,14 +615,14 @@ class MultiPlatformParserPlugin(MaiBotPlugin):
         entries.append(pending)
         self._pending_downloads[key] = entries
 
-    def _consume_pending_download(self, session_id: str, sender_id: str | None, source: str) -> tuple[PendingDownload | None, list[PendingDownload]]:
+    def _consume_pending_download(self, session_id: str, sender_id: str | None, source: str) -> tuple[PendingDownload | None, list[PendingDownload], int]:
         if not sender_id:
-            return None, []
+            return None, [], 0
         key = (session_id, sender_id)
         entries = [entry for entry in self._pending_downloads.get(key, []) if entry.expires_at >= time.time()]
         if not entries:
             self._pending_downloads.pop(key, None)
-            return None, []
+            return None, [], 0
 
         if selected := re.search(r"(?:下载|帮我下载|发视频|保存)\s*([1-9]\d*)", source):
             index = int(selected.group(1)) - 1
@@ -631,7 +632,7 @@ class MultiPlatformParserPlugin(MaiBotPlugin):
                     self._pending_downloads[key] = entries
                 else:
                     self._pending_downloads.pop(key, None)
-                return pending, []
+                return pending, [], len(entries) + 1
 
         matched = [entry for entry in entries if entry.url in source]
         if len(matched) == 1:
@@ -641,12 +642,19 @@ class MultiPlatformParserPlugin(MaiBotPlugin):
                 self._pending_downloads[key] = entries
             else:
                 self._pending_downloads.pop(key, None)
-            return pending, []
+            return pending, [], len(entries) + 1
         if len(entries) == 1:
             self._pending_downloads.pop(key, None)
-            return entries[0], []
+            return entries[0], [], 1
+        if self.config.parser.pending_download_selection == "latest":
+            pending = entries.pop()
+            if entries:
+                self._pending_downloads[key] = entries
+            else:
+                self._pending_downloads.pop(key, None)
+            return pending, [], len(entries) + 1
         self._pending_downloads[key] = entries
-        return None, entries
+        return None, entries, len(entries)
 
     @staticmethod
     def _is_download_confirmation(text: str) -> bool:
@@ -657,6 +665,12 @@ class MultiPlatformParserPlugin(MaiBotPlugin):
         lines = ["有多条待下载内容，请回复“下载 序号”选择："]
         lines.extend(f"{index}. {entry.title}" for index, entry in enumerate(entries, 1))
         return "\n".join(lines)
+
+    @staticmethod
+    def _download_started_text(pending: PendingDownload, queue_size: int) -> str:
+        if queue_size <= 1:
+            return "好的，开始下载。"
+        return f"好的，开始下载最新一条：{pending.title}\n当前待下载队列共 {queue_size} 条，剩余 {queue_size - 1} 条。"
 
     def _create_task(self, coroutine: Any, name: str) -> None:
         task = asyncio.create_task(coroutine, name=name)
