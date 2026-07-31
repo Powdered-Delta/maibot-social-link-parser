@@ -68,8 +68,8 @@ class PluginSectionConfig(PluginConfigBase):
     __ui_order__: ClassVar[int] = 0
 
     name: str = Field(default="maibot_social_link_parser", description="插件内部名称", json_schema_extra=_ui("插件内部名称", "仅用于标识配置；通常无需修改。", 0, label_en="Internal name", hint_en="Used only to identify this configuration. Usually leave unchanged.", label_ja="内部名", hint_ja="設定識別用です。通常は変更不要です。", disabled=True))
-    config_version: str = Field(default="0.1.13", description="配置文件版本", json_schema_extra=_ui("配置版本", "由插件用于补齐配置字段，请勿手动修改。", 1, label_en="Configuration version", hint_en="Used to merge configuration fields. Do not edit manually.", label_ja="設定バージョン", hint_ja="設定項目の統合に使用します。手動で変更しないでください。", disabled=True))
-    version: str = Field(default="0.1.13", description="插件版本", json_schema_extra=_ui("插件版本", "当前插件版本，仅供查看。", 2, label_en="Plugin version", hint_en="Current plugin version. Read only.", label_ja="プラグインバージョン", hint_ja="現在のプラグインバージョンです。読み取り専用です。", disabled=True))
+    config_version: str = Field(default="0.1.14", description="配置文件版本", json_schema_extra=_ui("配置版本", "由插件用于补齐配置字段，请勿手动修改。", 1, label_en="Configuration version", hint_en="Used to merge configuration fields. Do not edit manually.", label_ja="設定バージョン", hint_ja="設定項目の統合に使用します。手動で変更しないでください。", disabled=True))
+    version: str = Field(default="0.1.14", description="插件版本", json_schema_extra=_ui("插件版本", "当前插件版本，仅供查看。", 2, label_en="Plugin version", hint_en="Current plugin version. Read only.", label_ja="プラグインバージョン", hint_ja="現在のプラグインバージョンです。読み取り専用です。", disabled=True))
     enabled: bool = Field(default=True, description="是否启用插件", json_schema_extra=_ui("启用插件", "关闭后不再识别或处理社媒链接。", 3, label_en="Enable plugin", hint_en="When disabled, social media links are not detected or handled.", label_ja="プラグインを有効化", hint_ja="無効時はソーシャルメディアのリンクを処理しません。"))
     dry_run: bool = Field(default=False, description="演练模式", json_schema_extra=_ui("演练模式", "不向 QQ/NapCat 发送任何消息，仅记录拟发送内容；仍会下载媒体，可能消耗流量和磁盘。", 4, label_en="Dry run", hint_en="Prevents all QQ/NapCat sends and logs intended output. Downloads still run and use bandwidth and disk.", label_ja="ドライラン", hint_ja="QQ/NapCat への送信を行わず、送信予定をログに出します。ダウンロードは実行されます。"))
 
@@ -313,7 +313,7 @@ class MultiPlatformParserPlugin(MaiBotPlugin):
                 await self._send_text(message, "原媒体下载或发送失败，请稍后重试。")
         except Exception as exc:
             self.ctx.logger.warning("Confirmed media download failed for %s: %s", pending.url, exc)
-            await self._send_text(message, "媒体下载失败，请稍后重试。")
+            await self._send_text(message, self._download_error_message(exc))
         finally:
             reset_download_progress_callback(callback_token)
             heartbeat.cancel()
@@ -469,6 +469,7 @@ class MultiPlatformParserPlugin(MaiBotPlugin):
                     path = await content.get_path()
                 except Exception as exc:
                     self.ctx.logger.warning("Dynamic media download failed after retries: %s", exc)
+                    await self._send_text(message, self._download_error_message(exc))
                     all_sent = False
                 else:
                     all_sent = await self._send_video(message, path) and all_sent
@@ -707,7 +708,17 @@ class MultiPlatformParserPlugin(MaiBotPlugin):
     def _download_started_text(pending: PendingDownload, queue_size: int) -> str:
         if queue_size <= 1:
             return "好的，开始下载。"
-        return f"好的，开始下载最新一条：{pending.title}\n当前待下载队列共 {queue_size} 条，剩余 {queue_size - 1} 条。"
+        return f"好的，开始下载：{pending.title}\n当前待下载队列共 {queue_size} 条，剩余 {queue_size - 1} 条。"
+
+    @staticmethod
+    def _download_error_message(exc: Exception) -> str:
+        detail = str(exc)
+        if "ffmpeg" in detail.lower() and ("未安装" in detail or "not found" in detail.lower()):
+            return (
+                "媒体需要 FFmpeg 合并音视频，但 MaiBot Runner 未安装 FFmpeg。\n"
+                "请在 MaiBot 使用的 Docker 镜像中预装 ffmpeg 并重建容器；不要只在运行中的容器内临时安装。"
+            )
+        return "媒体下载失败，请稍后重试。"
 
     def _create_task(self, coroutine: Any, name: str) -> asyncio.Task[Any]:
         task = asyncio.create_task(coroutine, name=name)
