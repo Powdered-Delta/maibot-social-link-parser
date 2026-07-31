@@ -9,6 +9,7 @@ from astrbot.api import logger
 
 from ..config import PluginConfig
 from ..cookie import CookieJar
+from ..data import ImageContent
 from ..download import Downloader
 from .base import BaseParser, ParseException, Platform, handle
 
@@ -118,7 +119,7 @@ class XHSParser(BaseParser):
         # 添加视频内容
         if video_url := note_detail.video_url:
             cover_url = self._find_cover_url(note_data)
-            contents.append(self.create_video_content(video_url, cover_url))
+            contents.append(self._create_video_content(video_url, cover_url))
 
         # 添加图片内容
         else:
@@ -198,7 +199,7 @@ class XHSParser(BaseParser):
         contents = []
         if video_url := note_data.video_url:
             cover_url = self._find_cover_url(preload_data) or self._find_cover_url(raw_note_data)
-            contents.append(self.create_video_content(video_url, cover_url))
+            contents.append(self._create_video_content(video_url, cover_url))
         else:
             contents.extend(self._create_gallery_contents(raw_note_data))
 
@@ -273,26 +274,69 @@ class XHSParser(BaseParser):
             if not isinstance(image, dict):
                 continue
             image_url = self._original_image_url(image)
+            fallback_url = self._image_url(image)
             dynamic_url = self._find_dynamic_url(image)
             if dynamic_url:
-                contents.append(self.create_video_content(dynamic_url, image_url))
+                contents.append(self._create_video_content(dynamic_url, fallback_url))
             elif image_url:
-                contents.extend(self.create_image_contents([image_url]))
+                contents.append(ImageContent(self._download_xhs_image(image_url, fallback_url)))
         return contents
+
+    def _create_video_content(self, video_url: str, cover_url: str | None):
+        content = self.create_video_content(video_url, headers=self._media_headers())
+        if cover_url:
+            content.cover = self._download_xhs_image(
+                self._original_url(cover_url), self._image_url_from_value(cover_url)
+            )
+        return content
+
+    async def _download_xhs_image(self, original_url: str, fallback_url: str | None = None):
+        """Try the original CDN object first, then retain a displayable fallback."""
+        headers = self._media_headers()
+        try:
+            return await self.downloader.download_img(
+                original_url, headers=headers, proxy=self.proxy
+            )
+        except Exception as exc:
+            fallback_url = self._image_url_from_value(fallback_url or "")
+            if not fallback_url or fallback_url == original_url:
+                raise
+            logger.warning("XHS original image rejected, using display fallback: %s", exc)
+            return await self.downloader.download_img(
+                fallback_url, headers=headers, proxy=self.proxy
+            )
+
+    def _media_headers(self) -> dict[str, str]:
+        return {**self.headers, "Referer": "https://www.xiaohongshu.com/"}
 
     @staticmethod
     def _original_image_url(image: dict[str, Any]) -> str | None:
         """Use the original image URL instead of XHS's watermarked `!` variant."""
+        url = XHSParser._image_url(image)
+        return XHSParser._original_url(url) if url else None
+
+    @staticmethod
+    def _image_url(image: dict[str, Any]) -> str | None:
         for key in ("urlDefault", "url", "urlSizeLarge", "urlPre"):
             value = image.get(key)
-            if not isinstance(value, str):
-                continue
-            url = html.unescape(value).strip()
-            if url.startswith("//"):
-                url = f"https:{url}"
-            if url.startswith(("http://", "https://")):
-                return url.split("!", 1)[0]
+            if url := XHSParser._image_url_from_value(value):
+                return url
         return None
+
+    @staticmethod
+    def _original_url(url: str) -> str:
+        return url.split("!", 1)[0]
+
+    @staticmethod
+    def _image_url_from_value(value: Any) -> str | None:
+        if not isinstance(value, str):
+            return None
+        url = html.unescape(value).strip()
+        if url.startswith("//"):
+            url = f"https:{url}"
+        if url.startswith("http://"):
+            url = f"https://{url.removeprefix('http://')}"
+        return url if url.startswith("https://") else None
 
     @staticmethod
     def _find_dynamic_url(data: dict[str, Any]) -> str | None:
