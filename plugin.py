@@ -68,8 +68,8 @@ class PluginSectionConfig(PluginConfigBase):
     __ui_order__: ClassVar[int] = 0
 
     name: str = Field(default="maibot_social_link_parser", description="插件内部名称", json_schema_extra=_ui("插件内部名称", "仅用于标识配置；通常无需修改。", 0, label_en="Internal name", hint_en="Used only to identify this configuration. Usually leave unchanged.", label_ja="内部名", hint_ja="設定識別用です。通常は変更不要です。", disabled=True))
-    config_version: str = Field(default="0.1.5", description="配置文件版本", json_schema_extra=_ui("配置版本", "由插件用于补齐配置字段，请勿手动修改。", 1, label_en="Configuration version", hint_en="Used to merge configuration fields. Do not edit manually.", label_ja="設定バージョン", hint_ja="設定項目の統合に使用します。手動で変更しないでください。", disabled=True))
-    version: str = Field(default="0.1.5", description="插件版本", json_schema_extra=_ui("插件版本", "当前插件版本，仅供查看。", 2, label_en="Plugin version", hint_en="Current plugin version. Read only.", label_ja="プラグインバージョン", hint_ja="現在のプラグインバージョンです。読み取り専用です。", disabled=True))
+    config_version: str = Field(default="0.1.6", description="配置文件版本", json_schema_extra=_ui("配置版本", "由插件用于补齐配置字段，请勿手动修改。", 1, label_en="Configuration version", hint_en="Used to merge configuration fields. Do not edit manually.", label_ja="設定バージョン", hint_ja="設定項目の統合に使用します。手動で変更しないでください。", disabled=True))
+    version: str = Field(default="0.1.6", description="插件版本", json_schema_extra=_ui("插件版本", "当前插件版本，仅供查看。", 2, label_en="Plugin version", hint_en="Current plugin version. Read only.", label_ja="プラグインバージョン", hint_ja="現在のプラグインバージョンです。読み取り専用です。", disabled=True))
     enabled: bool = Field(default=True, description="是否启用插件", json_schema_extra=_ui("启用插件", "关闭后不再识别或处理社媒链接。", 3, label_en="Enable plugin", hint_en="When disabled, social media links are not detected or handled.", label_ja="プラグインを有効化", hint_ja="無効時はソーシャルメディアのリンクを処理しません。"))
     dry_run: bool = Field(default=False, description="演练模式", json_schema_extra=_ui("演练模式", "不向 QQ/NapCat 发送任何消息，仅记录拟发送内容；仍会下载媒体，可能消耗流量和磁盘。", 4, label_en="Dry run", hint_en="Prevents all QQ/NapCat sends and logs intended output. Downloads still run and use bandwidth and disk.", label_ja="ドライラン", hint_ja="QQ/NapCat への送信を行わず、送信予定をログに出します。ダウンロードは実行されます。"))
 
@@ -292,7 +292,7 @@ class MultiPlatformParserPlugin(MaiBotPlugin):
             result = await pending.parser.parse(pending.keyword, pending.searched)
             if not result.url:
                 result.url = pending.url
-            if not await self._send_result(message, result):
+            if not await self._send_result(message, result, include_header=False):
                 await self._send_text(message, "原媒体下载或发送失败，请稍后重试。")
         except Exception as exc:
             self.ctx.logger.warning("Confirmed media download failed for %s: %s", pending.url, exc)
@@ -312,12 +312,15 @@ class MultiPlatformParserPlugin(MaiBotPlugin):
         if preview is not None:
             await self._send_image(message, preview)
 
-    async def _send_result(self, message: dict[str, Any], result: ParseResult) -> bool:
-        header = self._format_header(result)
+    async def _send_result(self, message: dict[str, Any], result: ParseResult, *, include_header: bool = True) -> bool:
+        header = self._format_header(result) if include_header else ""
         text_nodes: list[list[dict[str, Any]]] = []
         media_items = self._flatten_contents(result)
         # Full-media sends never use the author avatar. Close its lazy download coroutine.
         self._cancel_author_avatar(result)
+
+        if any(isinstance(content, (VideoContent, DynamicContent)) for content in media_items):
+            return await self._send_media_in_order(message, media_items, header)
 
         if header:
             text_nodes.append([text_segment(header)])
@@ -382,6 +385,50 @@ class MultiPlatformParserPlugin(MaiBotPlugin):
                     all_sent = False
                     continue
                 all_sent = await self._send_video(message, path) and all_sent
+        return all_sent
+
+    async def _send_media_in_order(self, message: dict[str, Any], media_items: list[Any], header: str) -> bool:
+        """Send mixed galleries in source order; merged forwards cannot carry videos."""
+        all_sent = True
+        if header:
+            all_sent = await self._send_text(message, header) and all_sent
+
+        image_count = 0
+        for content in media_items:
+            if isinstance(content, TextContent):
+                if content.text:
+                    all_sent = await self._send_text(
+                        message, self._truncate(content.text, self.config.parser.max_text_chars)
+                    ) and all_sent
+                continue
+            if isinstance(content, GraphicsContent) and content.text:
+                all_sent = await self._send_text(
+                    message, self._truncate(content.text, self.config.parser.max_text_chars)
+                ) and all_sent
+
+            if isinstance(content, (GraphicsContent, ImageContent)):
+                if not self.config.parser.send_images or image_count >= self.config.parser.max_images:
+                    continue
+                image_count += 1
+                try:
+                    path = await content.get_path()
+                except Exception as exc:
+                    self.ctx.logger.warning("Image %s download failed after retries: %s", image_count, exc)
+                    all_sent = await self._send_text(message, f"第 {image_count} 张图片下载失败，已跳过。") and all_sent
+                else:
+                    all_sent = await self._send_image(message, path) and all_sent
+                continue
+
+            if isinstance(content, (VideoContent, DynamicContent)):
+                if not self.config.parser.send_video:
+                    continue
+                try:
+                    path = await content.get_path()
+                except Exception as exc:
+                    self.ctx.logger.warning("Dynamic media download failed after retries: %s", exc)
+                    all_sent = False
+                else:
+                    all_sent = await self._send_video(message, path) and all_sent
         return all_sent
 
     async def _send_text(self, message: dict[str, Any], text: str) -> bool:

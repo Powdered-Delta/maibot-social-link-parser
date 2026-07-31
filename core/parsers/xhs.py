@@ -198,8 +198,8 @@ class XHSParser(BaseParser):
         if video_url := note_data.video_url:
             cover_url = self._find_cover_url(preload_data) or self._find_cover_url(raw_note_data)
             contents.append(self.create_video_content(video_url, cover_url))
-        elif img_urls := note_data.image_urls:
-            contents.extend(self.create_image_contents(img_urls))
+        else:
+            contents.extend(self._create_gallery_contents(raw_note_data))
 
         return self.result(
             title=note_data.title,
@@ -260,6 +260,47 @@ class XHSParser(BaseParser):
             return None
 
         return find(data)
+
+    def _create_gallery_contents(self, note_data: dict[str, Any]):
+        """Build mixed static and live-photo galleries while preserving item order."""
+        images = note_data.get("imageList")
+        if not isinstance(images, list):
+            return []
+
+        contents = []
+        for image in images:
+            if not isinstance(image, dict):
+                continue
+            image_url = self._find_cover_url(image)
+            dynamic_url = self._find_dynamic_url(image)
+            if dynamic_url:
+                contents.append(self.create_video_content(dynamic_url, image_url))
+            elif image_url:
+                contents.extend(self.create_image_contents([image_url]))
+        return contents
+
+    @staticmethod
+    def _find_dynamic_url(data: dict[str, Any]) -> str | None:
+        """Extract a Live Photo/video URL without mistaking its still image for media."""
+        media_keys = ("livePhoto", "livePhotoInfo", "video", "videoInfo", "stream")
+        url_keys = ("masterUrl", "playUrl", "videoUrl", "url")
+
+        def find(value: Any) -> str | None:
+            if isinstance(value, dict):
+                for key in url_keys:
+                    candidate = value.get(key)
+                    if isinstance(candidate, str) and candidate.startswith(("http://", "https://")):
+                        return candidate
+                for key in media_keys:
+                    if (found := find(value.get(key))) is not None:
+                        return found
+            elif isinstance(value, list):
+                for candidate in value:
+                    if (found := find(candidate)) is not None:
+                        return found
+            return None
+
+        return find({key: data.get(key) for key in media_keys})
 
 
 class Stream(Struct):
