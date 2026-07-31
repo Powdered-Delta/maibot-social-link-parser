@@ -30,6 +30,7 @@ from .sender import (
     send_emoji_reaction,
     send_group_forward,
     send_image,
+    send_overview_hybrid,
     send_text,
     send_video,
     text_segment,
@@ -68,8 +69,8 @@ class PluginSectionConfig(PluginConfigBase):
     __ui_order__: ClassVar[int] = 0
 
     name: str = Field(default="maibot_social_link_parser", description="插件内部名称", json_schema_extra=_ui("插件内部名称", "仅用于标识配置；通常无需修改。", 0, label_en="Internal name", hint_en="Used only to identify this configuration. Usually leave unchanged.", label_ja="内部名", hint_ja="設定識別用です。通常は変更不要です。", disabled=True))
-    config_version: str = Field(default="0.1.14", description="配置文件版本", json_schema_extra=_ui("配置版本", "由插件用于补齐配置字段，请勿手动修改。", 1, label_en="Configuration version", hint_en="Used to merge configuration fields. Do not edit manually.", label_ja="設定バージョン", hint_ja="設定項目の統合に使用します。手動で変更しないでください。", disabled=True))
-    version: str = Field(default="0.1.14", description="插件版本", json_schema_extra=_ui("插件版本", "当前插件版本，仅供查看。", 2, label_en="Plugin version", hint_en="Current plugin version. Read only.", label_ja="プラグインバージョン", hint_ja="現在のプラグインバージョンです。読み取り専用です。", disabled=True))
+    config_version: str = Field(default="0.1.15", description="配置文件版本", json_schema_extra=_ui("配置版本", "由插件用于补齐配置字段，请勿手动修改。", 1, label_en="Configuration version", hint_en="Used to merge configuration fields. Do not edit manually.", label_ja="設定バージョン", hint_ja="設定項目の統合に使用します。手動で変更しないでください。", disabled=True))
+    version: str = Field(default="0.1.15", description="插件版本", json_schema_extra=_ui("插件版本", "当前插件版本，仅供查看。", 2, label_en="Plugin version", hint_en="Current plugin version. Read only.", label_ja="プラグインバージョン", hint_ja="現在のプラグインバージョンです。読み取り専用です。", disabled=True))
     enabled: bool = Field(default=True, description="是否启用插件", json_schema_extra=_ui("启用插件", "关闭后不再识别或处理社媒链接。", 3, label_en="Enable plugin", hint_en="When disabled, social media links are not detected or handled.", label_ja="プラグインを有効化", hint_ja="無効時はソーシャルメディアのリンクを処理しません。"))
     dry_run: bool = Field(default=False, description="演练模式", json_schema_extra=_ui("演练模式", "不向 QQ/NapCat 发送任何消息，仅记录拟发送内容；仍会下载媒体，可能消耗流量和磁盘。", 4, label_en="Dry run", hint_en="Prevents all QQ/NapCat sends and logs intended output. Downloads still run and use bandwidth and disk.", label_ja="ドライラン", hint_ja="QQ/NapCat への送信を行わず、送信予定をログに出します。ダウンロードは実行されます。"))
 
@@ -106,10 +107,11 @@ class ParserSectionConfig(PluginConfigBase):
     pending_download_ttl_seconds: int = Field(default=600, description="等待确认有效期", ge=60, le=3600, json_schema_extra=_ui("等待确认有效期（秒）", "确认下载任务过期后需要重新发送链接。", 11, label_en="Confirmation expiry (seconds)", hint_en="After expiration, send the link again to create a new download request.", label_ja="確認の有効期限（秒）", hint_ja="期限切れ後は、新しいダウンロード要求を作るためにリンクを再送してください。"))
     pending_download_selection: Literal["latest", "number"] = Field(default="latest", description="多条待下载内容的选择方式", json_schema_extra={**_ui("多条待下载内容的选择方式", "默认“下载”会下载同一会话内最新一条内容，并在开始消息中说明队列情况。选择“回复编号”后，存在多条内容时必须回复“下载 1”“下载 2”等明确编号。当前消息网关未向插件稳定提供回复目标 ID，因此无法可靠按 QQ 回复引用选择。", 12, label_en="Multiple pending-download selection", hint_en="By default, Download selects the newest item in the same session and reports queue state. Choose Number to require Download 1, Download 2, etc. The current gateway does not reliably expose reply target IDs to plugins, so QQ reply references cannot be used safely yet.", label_ja="複数待機ダウンロードの選択方法", hint_ja="既定では、ダウンロードは同一セッション内の最新項目を選び、キュー状態を通知します。番号指定では「ダウンロード 1」などが必要です。現在のゲートウェイは返信先 ID をプラグインに安定して渡さないため、QQ の返信引用はまだ安全に利用できません。"), "widget": "select", "options": [{"label": "最新一条（默认）", "value": "latest"}, {"label": "回复编号", "value": "number"}]})
     send_preview_image: bool = Field(default=True, description="是否发送封面或首图预览", json_schema_extra=_ui("发送封面或首图预览", "确认模式下下载视频封面或图集首图，用于让用户在完整下载前确认内容。", 12, label_en="Send cover or first-image preview", hint_en="In confirm mode, download a video cover or first gallery image so users can verify content before the full download.", label_ja="カバーまたは先頭画像のプレビューを送信", hint_ja="確認モードでは、完全なダウンロード前に内容を確認できるよう動画カバーまたは先頭画像を取得します。"))
-    reaction_emoji_enabled: bool = Field(default=True, description="识别后表情回应", json_schema_extra=_ui("识别后表情回应", "对群聊原消息调用 NapCat 表情回应 API；私聊不会执行。", 13, label_en="React after recognition", hint_en="Calls NapCat's reaction API for the original group message. It is not used in private chats.", label_ja="認識後にリアクション", hint_ja="元のグループメッセージに NapCat のリアクション API を使用します。個別チャットでは実行しません。"))
-    reaction_emoji_id: int = Field(default=76, description="QQ 表情回应 ID", ge=1, json_schema_extra=_ui("QQ 表情回应 ID", "NapCat `set_msg_emoji_like` 使用的数字表情 ID。仅在已启用表情回应时生效。", 14, label_en="QQ reaction emoji ID", hint_en="Numeric emoji ID for NapCat set_msg_emoji_like. Used only when reactions are enabled.", label_ja="QQ リアクション絵文字 ID", hint_ja="NapCat set_msg_emoji_like に使用する数値 ID です。リアクション有効時のみ使用します。"))
-    source_max_size_mb: int = Field(default=80, description="单媒体最大下载大小", ge=1, le=300, json_schema_extra=_ui("单媒体最大下载大小（MB）", "单个图片、视频或音频超过此值会被拒绝下载。提高该值会增加磁盘、网络和 QQ 发送失败风险。", 15, label_en="Maximum media size (MB)", hint_en="Images, videos, or audio above this size are not downloaded. Increasing it raises disk, bandwidth, and QQ delivery failure risk.", label_ja="メディア最大サイズ（MB）", hint_ja="このサイズを超える画像、動画、音声はダウンロードしません。増やすとディスク、通信量、QQ 送信失敗のリスクが上がります。"))
-    source_max_minutes: int = Field(default=8, description="视频最大时长", ge=1, le=60, json_schema_extra=_ui("视频最大时长（分钟）", "超过此时长的视频不下载，避免意外的大文件任务。", 16, label_en="Maximum video duration (minutes)", hint_en="Longer videos are not downloaded to avoid unexpected large jobs.", label_ja="動画の最大時間（分）", hint_ja="予期しない大きなタスクを避けるため、この時間を超える動画はダウンロードしません。"))
+    overview_hybrid_message_beta: bool = Field(default=False, description="图文混编概览（测试）", json_schema_extra=_ui("图文混编概览（测试）", "默认关闭。开启后，尝试将概览文字、预览图和下载提示合并为一条普通 QQ 消息。仅支持新版 MaiBot Host 与 NapCat Adapter；发送失败时自动拆分为原有的文字和图片消息。", 13, label_en="Mixed-media overview (beta)", hint_en="Off by default. Sends overview text, preview, and the download prompt as one ordinary QQ message. Requires a current MaiBot Host and NapCat Adapter; failed sends fall back to separate text and image messages.", label_ja="画像・テキスト混在概要（ベータ）", hint_ja="既定では無効です。有効にすると概要文、プレビュー、ダウンロード案内を通常の QQ メッセージ 1 件にまとめます。新しい MaiBot Host と NapCat Adapter が必要で、送信失敗時は従来の個別メッセージに戻ります。"))
+    reaction_emoji_enabled: bool = Field(default=True, description="识别后表情回应", json_schema_extra=_ui("识别后表情回应", "对群聊原消息调用 NapCat 表情回应 API；私聊不会执行。", 14, label_en="React after recognition", hint_en="Calls NapCat's reaction API for the original group message. It is not used in private chats.", label_ja="認識後にリアクション", hint_ja="元のグループメッセージに NapCat のリアクション API を使用します。個別チャットでは実行しません。"))
+    reaction_emoji_id: int = Field(default=76, description="QQ 表情回应 ID", ge=1, json_schema_extra=_ui("QQ 表情回应 ID", "NapCat `set_msg_emoji_like` 使用的数字表情 ID。仅在已启用表情回应时生效。", 15, label_en="QQ reaction emoji ID", hint_en="Numeric emoji ID for NapCat set_msg_emoji_like. Used only when reactions are enabled.", label_ja="QQ リアクション絵文字 ID", hint_ja="NapCat set_msg_emoji_like に使用する数値 ID です。リアクション有効時のみ使用します。"))
+    source_max_size_mb: int = Field(default=80, description="单媒体最大下载大小", ge=1, le=300, json_schema_extra=_ui("单媒体最大下载大小（MB）", "单个图片、视频或音频超过此值会被拒绝下载。提高该值会增加磁盘、网络和 QQ 发送失败风险。", 16, label_en="Maximum media size (MB)", hint_en="Images, videos, or audio above this size are not downloaded. Increasing it raises disk, bandwidth, and QQ delivery failure risk.", label_ja="メディア最大サイズ（MB）", hint_ja="このサイズを超える画像、動画、音声はダウンロードしません。増やすとディスク、通信量、QQ 送信失敗のリスクが上がります。"))
+    source_max_minutes: int = Field(default=8, description="视频最大时长", ge=1, le=60, json_schema_extra=_ui("视频最大时长（分钟）", "超过此时长的视频不下载，避免意外的大文件任务。", 17, label_en="Maximum video duration (minutes)", hint_en="Longer videos are not downloaded to avoid unexpected large jobs.", label_ja="動画の最大時間（分）", hint_ja="予期しない大きなタスクを避けるため、この時間を超える動画はダウンロードしません。"))
 
 
 class NetworkSectionConfig(PluginConfigBase):
@@ -342,14 +344,19 @@ class MultiPlatformParserPlugin(MaiBotPlugin):
     async def _send_overview(self, message: dict[str, Any], result: ParseResult) -> None:
         """Send metadata and one preview only; full media waits for user confirmation."""
         header = self._format_header(result)
-        await self._send_text(message, f"{header}\n\n回复“下载”获取原媒体。")
         if not self.config.parser.send_preview_image:
+            await self._send_text(message, f"{header}\n\n回复“下载”获取原媒体。")
             self._cancel_media_tasks(self._flatten_contents(result))
             return
 
         preview = await self._get_preview_path(self._flatten_contents(result))
         self._cancel_media_tasks(self._flatten_contents(result), keep_path=preview)
         self._cancel_author_avatar(result)
+        if preview is not None and self.config.parser.overview_hybrid_message_beta:
+            if await self._send_overview_hybrid(message, header, preview):
+                return
+
+        await self._send_text(message, f"{header}\n\n回复“下载”获取原媒体。")
         if preview is not None:
             await self._send_image(message, preview)
 
@@ -486,6 +493,19 @@ class MultiPlatformParserPlugin(MaiBotPlugin):
             self.ctx.logger.info("[dry_run] image: path=%s exists=%s", path.name, path.is_file())
             return True
         return await send_image(self.ctx, message, path, self.config.delivery.delivery_mode, self.config.api)
+
+    async def _send_overview_hybrid(self, message: dict[str, Any], header: str, preview: Path) -> bool:
+        if self.config.plugin.dry_run:
+            self.ctx.logger.info("[dry_run] overview_hybrid: header=%s preview=%s", header, preview.name)
+            return True
+        return await send_overview_hybrid(
+            self.ctx,
+            message,
+            header,
+            preview,
+            self.config.delivery.delivery_mode,
+            self.config.api,
+        )
 
     async def _send_video(self, message: dict[str, Any], path: Path) -> bool:
         if self.config.plugin.dry_run:

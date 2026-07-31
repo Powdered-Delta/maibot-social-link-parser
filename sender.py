@@ -42,6 +42,51 @@ async def send_video(ctx: Any, message: dict[str, Any], path: Path, delivery_mod
     return await _send_message(message, [{"type": "video", "data": {"file": _file_uri(path)}}], api, timeout=300)
 
 
+async def send_overview_hybrid(
+    ctx: Any,
+    message: dict[str, Any],
+    header: str,
+    preview: Path,
+    delivery_mode: str,
+    api: ApiSettings,
+) -> bool:
+    """Send an overview and preview as one ordinary mixed-media message."""
+    prompt = "回复“下载”获取原媒体。"
+    preview_url = _file_uri(preview)
+    if delivery_mode != "websocket":
+        return await _send_message(
+            message,
+            [
+                {"type": "text", "data": {"text": f"{header}\n\n"}},
+                {"type": "image", "data": {"file": preview_url}},
+                {"type": "text", "data": {"text": f"\n{prompt}"}},
+            ],
+            api,
+            timeout=120,
+        )
+
+    stream_id = str(message.get("session_id") or "").strip()
+    if not stream_id:
+        logger.error("Cannot send hybrid overview: missing session_id")
+        return False
+    try:
+        # Unknown Host segment types become DictComponent. The nested shape is
+        # the custom component payload recognized by the NapCat adapter.
+        result = await ctx.send.hybrid(
+            [
+                {"type": "text", "content": f"{header}\n\n"},
+                {"type": "imageurl", "data": {"type": "imageurl", "data": {"url": preview_url}}},
+                {"type": "text", "content": f"\n{prompt}"},
+            ],
+            stream_id,
+            sync_to_maisaka_history=True,
+        )
+    except Exception as exc:
+        logger.error("NapCat WebSocket hybrid overview send failed: %s", exc)
+        return False
+    return bool(result)
+
+
 async def send_emoji_reaction(message_id: str | int, emoji_id: int, api: ApiSettings) -> bool:
     """对群消息添加 NapCat 表情回应。"""
     try:
