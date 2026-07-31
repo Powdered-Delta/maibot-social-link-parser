@@ -16,8 +16,9 @@
 - [x] 图集部分成功发送：单张图片多次下载失败后保留其他成功图片，并插入缺失项文本占位符。
 - [x] `.part` 文件与 HTTP Range 续传，改善大媒体中断重试。
 - [x] `dry_run` 演练模式：不实际发送 QQ 消息，仍执行识别、概览和下载流程。
-- [ ] 将 QQ 发送从插件内 OneBot HTTP 调用迁移到已安装 NapCat Adapter 的 WebSocket API。
 - [ ] 支持共享 Docker volume 的媒体路径映射，解决 MaiBot 与 NapCat 双容器下的 `file://` 媒体可见性问题。
+- [ ] 支持 SOCKS5/SOCKS5h 代理，并为 HTTP/SOCKS 代理增加独立认证字段与凭据 URL 编码，避免将密码直接拼入代理 URL。
+- [ ] 建立面向用户的错误分类和提示：区分 Cookie/Token 缺失、非公开或无权限内容、平台风控、链接失效、媒体超限、下载失败与 QQ 投递失败；保留底层错误日志用于诊断。
 - [ ] 为确认下载状态机补充显式命令，例如 `/链接解析下载 <链接>`，用于多条待下载任务时的无歧义选择。
 - [ ] 增加单元测试，覆盖小红书 `.cn` 短链、确认下载权限隔离、Range 续传和图集失败占位符。
 - [ ] 接入并修复 X/Twitter：优先使用现有 xdown 路径，补齐 `x.com`、`twitter.com`、`mobile.twitter.com` 识别；yt-dlp 作为可选后备。
@@ -98,9 +99,10 @@ git clone git@github.com:Powdered-Delta/maibot-social-link-parser.git
 | `parser.group_whitelist` | `[]` | 自动解析群白名单；空列表表示所有群 |
 | `parser.block_ai_reply` | `true` | 命中链接后是否中止 MaiBot 普通聊天流程 |
 | `network.download_retry_times` | `3` | 媒体下载重试次数 |
-| `api.host`、`api.port`、`api.token` | - | 当前 OneBot HTTP 发送链路的 NapCat API 配置 |
+| `delivery.delivery_mode` | `websocket` | 默认经 MaiBot 的 NapCat WebSocket 网关发送；可改为 `http` 使用兼容直连 |
+| `api.host`、`api.port`、`api.token` | - | 仅 `delivery.delivery_mode = "http"` 时使用的 NapCat OneBot HTTP 配置 |
 
-当前实际发送使用 OneBot HTTP API。请让 `api.host`、`api.port`、`api.token` 指向 MaiBot 容器可访问的 NapCat OneBot HTTP 服务。
+默认通过 MaiBot 已启用的 NapCat WebSocket 网关发送，配置页的“HTTP 兼容后备”分组无需填写。选择 HTTP 兼容模式时，才需要让 `api.host`、`api.port`、`api.token` 指向 MaiBot 容器可访问的 NapCat OneBot HTTP 服务。
 
 ## 本地演练模式
 
@@ -118,7 +120,7 @@ git clone git@github.com:Powdered-Delta/maibot-social-link-parser.git
 
 ## 已知边界
 
-- 当前版本的 QQ 实际发送仍使用 OneBot HTTP。后续会在共享 Docker volume 配置就绪后切换至已安装 NapCat Adapter 的 WebSocket API。
+- 默认 QQ 发送通过 MaiBot 的 NapCat WebSocket 网关；HTTP 是可选兼容模式。WebSocket 模式下图集逐条发送，HTTP 模式可使用合并转发。
 - 图集发送保留下载到的源文件；MaiBot 聊天记录整合只消费摘要和元数据，不参与原图再编码。
 - NapCat 与 MaiBot 分属不同容器时，`file://` 媒体路径必须对 NapCat 可见。生产环境需配置共享 volume 或保留现有可用的媒体路径方案。
 - B站的完整下载能力默认关闭，不与独立 B站视频插件争夺链接。

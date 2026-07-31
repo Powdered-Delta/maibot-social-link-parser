@@ -15,7 +15,6 @@ logger = logging.getLogger("plugin.maibot_social_link_parser.sender")
 
 
 class ApiSettings:
-    delivery_mode: str
     host: str
     port: int
     token: str
@@ -25,20 +24,20 @@ class ApiSettings:
 MessageSegment = dict[str, Any]
 
 
-async def send_text(ctx: Any, message: dict[str, Any], text: str, api: ApiSettings) -> bool:
-    if api.delivery_mode == "websocket":
+async def send_text(ctx: Any, message: dict[str, Any], text: str, delivery_mode: str, api: ApiSettings) -> bool:
+    if delivery_mode == "websocket":
         return await _send_via_gateway(ctx, message, "text", text)
     return await _send_message(message, [{"type": "text", "data": {"text": text}}], api, timeout=30)
 
 
-async def send_image(ctx: Any, message: dict[str, Any], path: Path, api: ApiSettings) -> bool:
-    if api.delivery_mode == "websocket":
+async def send_image(ctx: Any, message: dict[str, Any], path: Path, delivery_mode: str, api: ApiSettings) -> bool:
+    if delivery_mode == "websocket":
         return await _send_via_gateway(ctx, message, "imageurl", {"url": _file_uri(path)})
     return await _send_message(message, [{"type": "image", "data": {"file": _file_uri(path)}}], api, timeout=120)
 
 
-async def send_video(ctx: Any, message: dict[str, Any], path: Path, api: ApiSettings) -> bool:
-    if api.delivery_mode == "websocket":
+async def send_video(ctx: Any, message: dict[str, Any], path: Path, delivery_mode: str, api: ApiSettings) -> bool:
+    if delivery_mode == "websocket":
         return await _send_via_gateway(ctx, message, "videourl", {"url": _file_uri(path)})
     return await _send_message(message, [{"type": "video", "data": {"file": _file_uri(path)}}], api, timeout=300)
 
@@ -65,9 +64,10 @@ async def send_group_forward(
     ctx: Any,
     message: dict[str, Any],
     nodes: list[list[MessageSegment]],
+    delivery_mode: str,
     api: ApiSettings,
 ) -> bool:
-    if api.delivery_mode == "websocket":
+    if delivery_mode == "websocket":
         # The host gateway has no plugin-facing merged-forward message API yet.
         return False
     group_id = _get_group_id(message)

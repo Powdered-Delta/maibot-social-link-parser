@@ -68,8 +68,8 @@ class PluginSectionConfig(PluginConfigBase):
     __ui_order__: ClassVar[int] = 0
 
     name: str = Field(default="maibot_social_link_parser", description="插件内部名称", json_schema_extra=_ui("插件内部名称", "仅用于标识配置；通常无需修改。", 0, label_en="Internal name", hint_en="Used only to identify this configuration. Usually leave unchanged.", label_ja="内部名", hint_ja="設定識別用です。通常は変更不要です。", disabled=True))
-    config_version: str = Field(default="0.1.4", description="配置文件版本", json_schema_extra=_ui("配置版本", "由插件用于补齐配置字段，请勿手动修改。", 1, label_en="Configuration version", hint_en="Used to merge configuration fields. Do not edit manually.", label_ja="設定バージョン", hint_ja="設定項目の統合に使用します。手動で変更しないでください。", disabled=True))
-    version: str = Field(default="0.1.4", description="插件版本", json_schema_extra=_ui("插件版本", "当前插件版本，仅供查看。", 2, label_en="Plugin version", hint_en="Current plugin version. Read only.", label_ja="プラグインバージョン", hint_ja="現在のプラグインバージョンです。読み取り専用です。", disabled=True))
+    config_version: str = Field(default="0.1.5", description="配置文件版本", json_schema_extra=_ui("配置版本", "由插件用于补齐配置字段，请勿手动修改。", 1, label_en="Configuration version", hint_en="Used to merge configuration fields. Do not edit manually.", label_ja="設定バージョン", hint_ja="設定項目の統合に使用します。手動で変更しないでください。", disabled=True))
+    version: str = Field(default="0.1.5", description="插件版本", json_schema_extra=_ui("插件版本", "当前插件版本，仅供查看。", 2, label_en="Plugin version", hint_en="Current plugin version. Read only.", label_ja="プラグインバージョン", hint_ja="現在のプラグインバージョンです。読み取り専用です。", disabled=True))
     enabled: bool = Field(default=True, description="是否启用插件", json_schema_extra=_ui("启用插件", "关闭后不再识别或处理社媒链接。", 3, label_en="Enable plugin", hint_en="When disabled, social media links are not detected or handled.", label_ja="プラグインを有効化", hint_ja="無効時はソーシャルメディアのリンクを処理しません。"))
     dry_run: bool = Field(default=False, description="演练模式", json_schema_extra=_ui("演练模式", "不向 QQ/NapCat 发送任何消息，仅记录拟发送内容；仍会下载媒体，可能消耗流量和磁盘。", 4, label_en="Dry run", hint_en="Prevents all QQ/NapCat sends and logs intended output. Downloads still run and use bandwidth and disk.", label_ja="ドライラン", hint_ja="QQ/NapCat への送信を行わず、送信予定をログに出します。ダウンロードは実行されます。"))
 
@@ -133,12 +133,19 @@ class CookieSectionConfig(PluginConfigBase):
     bilibili: str = Field(default="", description="B站 Cookie", json_schema_extra=_ui("B站 Cookie", "可选。启用 B站平台后，可用于访问更高画质或受游客限制的内容。必须使用自己的 Cookie，并注意登录态过期。", 3, label_en="Bilibili cookie", hint_en="Optional. When Bilibili is enabled, it may allow higher quality or guest-restricted content. Use only your own cookie and expect sessions to expire.", label_ja="Bilibili Cookie", hint_ja="任意。Bilibili を有効化した場合、高画質やゲスト制限コンテンツに使用できます。自身の Cookie のみを使い、期限切れに注意してください。", input_type="password", multiline=True))
 
 
-class ApiConfig(PluginConfigBase):
-    __ui_label__: ClassVar[str] = "NapCat OneBot HTTP"
-    __ui_icon__: ClassVar[str] = "api"
+class DeliveryConfig(PluginConfigBase):
+    __ui_label__: ClassVar[str] = "QQ 发送通道"
+    __ui_icon__: ClassVar[str] = "send"
     __ui_order__: ClassVar[int] = 4
 
     delivery_mode: Literal["websocket", "http"] = Field(default="websocket", description="QQ 消息发送通道", json_schema_extra={**_ui("QQ 消息发送通道", "默认通过 MaiBot 的 NapCat WebSocket 网关发送。仅在网关不可用或需要使用旧版 OneBot HTTP 直连时选择 HTTP。", 0, label_en="QQ delivery channel", hint_en="Uses MaiBot's NapCat WebSocket gateway by default. Choose HTTP only when the gateway is unavailable or legacy direct OneBot HTTP is required.", label_ja="QQ 配信チャネル", hint_ja="既定では MaiBot の NapCat WebSocket ゲートウェイを使用します。ゲートウェイが使えない場合や従来の OneBot HTTP 直結が必要な場合のみ HTTP を選択してください。"), "widget": "select", "options": [{"label": "NapCat WebSocket（推荐）", "value": "websocket"}, {"label": "OneBot HTTP（兼容）", "value": "http"}]})
+
+
+class ApiConfig(PluginConfigBase):
+    __ui_label__: ClassVar[str] = "HTTP 兼容后备"
+    __ui_icon__: ClassVar[str] = "http"
+    __ui_order__: ClassVar[int] = 5
+
     host: str = Field(default="127.0.0.1", description="OneBot HTTP API 主机", json_schema_extra=_ui("OneBot HTTP API 主机", "仅 HTTP 通道使用。容器部署时填写 NapCat 服务名或容器 IP；127.0.0.1 指向 MaiBot 容器自身，通常不是 NapCat。", 1, label_en="OneBot HTTP API host", hint_en="Used only by HTTP delivery. In Docker, use the NapCat service name or container IP; 127.0.0.1 points to the MaiBot container itself and is usually not NapCat.", label_ja="OneBot HTTP API ホスト", hint_ja="HTTP 配信時のみ使用します。Docker では NapCat のサービス名またはコンテナ IP を使用します。127.0.0.1 は MaiBot コンテナ自身を指すため、通常は NapCat ではありません。", placeholder="napcat"))
     port: int = Field(default=3000, description="OneBot HTTP API 端口", ge=1, le=65535, json_schema_extra=_ui("OneBot HTTP API 端口", "仅 HTTP 通道使用。与 NapCat 正向 HTTP 服务监听端口一致，不是 WebSocket 端口。", 2, label_en="OneBot HTTP API port", hint_en="Used only by HTTP delivery. Must match NapCat's forward HTTP listening port, not its WebSocket port.", label_ja="OneBot HTTP API ポート", hint_ja="HTTP 配信時のみ使用します。NapCat の順方向 HTTP 待受ポートと一致させます。WebSocket ポートではありません。"))
     token: str = Field(default="", description="OneBot HTTP API Token", json_schema_extra=_ui("OneBot HTTP API Token", "仅 HTTP 通道使用。NapCat 启用访问令牌时填写相同 Token；留空表示不使用鉴权。属于敏感凭据，请勿提交或写入日志。", 3, label_en="OneBot HTTP API token", hint_en="Used only by HTTP delivery. Enter the same token when NapCat access-token authentication is enabled. This is sensitive; do not commit or log it.", label_ja="OneBot HTTP API トークン", hint_ja="HTTP 配信時のみ使用します。NapCat のアクセストークン認証を有効にした場合は同じトークンを入力します。機密情報のため、コミットやログ出力は禁止です。", input_type="password"))
@@ -150,6 +157,7 @@ class PluginConfig(PluginConfigBase):
     parser: ParserSectionConfig = Field(default_factory=ParserSectionConfig)
     network: NetworkSectionConfig = Field(default_factory=NetworkSectionConfig)
     cookies: CookieSectionConfig = Field(default_factory=CookieSectionConfig)
+    delivery: DeliveryConfig = Field(default_factory=DeliveryConfig)
     api: ApiConfig = Field(default_factory=ApiConfig)
 
 
@@ -380,25 +388,25 @@ class MultiPlatformParserPlugin(MaiBotPlugin):
         if self.config.plugin.dry_run:
             self.ctx.logger.info("[dry_run] text: %s", text)
             return True
-        return await send_text(self.ctx, message, text, self.config.api)
+        return await send_text(self.ctx, message, text, self.config.delivery.delivery_mode, self.config.api)
 
     async def _send_image(self, message: dict[str, Any], path: Path) -> bool:
         if self.config.plugin.dry_run:
             self.ctx.logger.info("[dry_run] image: path=%s exists=%s", path.name, path.is_file())
             return True
-        return await send_image(self.ctx, message, path, self.config.api)
+        return await send_image(self.ctx, message, path, self.config.delivery.delivery_mode, self.config.api)
 
     async def _send_video(self, message: dict[str, Any], path: Path) -> bool:
         if self.config.plugin.dry_run:
             self.ctx.logger.info("[dry_run] video: path=%s exists=%s size=%s", path.name, path.is_file(), path.stat().st_size if path.is_file() else 0)
             return True
-        return await send_video(self.ctx, message, path, self.config.api)
+        return await send_video(self.ctx, message, path, self.config.delivery.delivery_mode, self.config.api)
 
     async def _send_group_forward(self, message: dict[str, Any], nodes: list[list[dict[str, Any]]]) -> bool:
         if self.config.plugin.dry_run:
             self.ctx.logger.info("[dry_run] group_forward: nodes=%s", len(nodes))
             return True
-        return await send_group_forward(self.ctx, message, nodes, self.config.api)
+        return await send_group_forward(self.ctx, message, nodes, self.config.delivery.delivery_mode, self.config.api)
 
     async def _send_emoji_reaction(self, message_id: str | int, emoji_id: int) -> bool:
         if self.config.plugin.dry_run:

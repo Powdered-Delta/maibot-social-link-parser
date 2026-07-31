@@ -1,7 +1,7 @@
 [plugin]
 name = "maibot_social_link_parser"
-config_version = "0.1.4"
-version = "0.1.4"
+config_version = "0.1.5"
+version = "0.1.5"
 enabled = true
 # Do not send to QQ/NapCat. Parsing and downloads still run for local validation.
 dry_run = false
@@ -38,9 +38,11 @@ xhs = ""
 xiaoheihe = ""
 bilibili = ""
 
-[api]
+[delivery]
 # Default: route through MaiBot's active NapCat WebSocket gateway.
 delivery_mode = "websocket"
+
+[api]
 # The fields below are used only when delivery_mode = "http".
 host = "127.0.0.1"
 port = 3000
