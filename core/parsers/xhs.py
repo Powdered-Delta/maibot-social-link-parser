@@ -116,8 +116,7 @@ class XHSParser(BaseParser):
         contents = []
         # 添加视频内容
         if video_url := note_detail.video_url:
-            # 使用第一张图片作为封面
-            cover_url = note_detail.image_urls[0] if note_detail.image_urls else None
+            cover_url = self._find_cover_url(note_data)
             contents.append(self.create_video_content(video_url, cover_url))
 
         # 添加图片内容
@@ -151,8 +150,8 @@ class XHSParser(BaseParser):
         if not note_data:
             raise ParseException("can't find noteData in json_obj")
         preload_data = note_data.get("normalNotePreloadData", {})
-        note_data = note_data.get("data", {}).get("noteData", {})
-        if not note_data:
+        raw_note_data = note_data.get("data", {}).get("noteData", {})
+        if not raw_note_data:
             raise ParseException("can't find noteData in noteData.data")
 
         class Image(Struct):
@@ -193,16 +192,12 @@ class XHSParser(BaseParser):
             def image_urls(self) -> list[str]:
                 return [item.urlSizeLarge or item.url for item in self.imagesList]
 
-        note_data = convert(note_data, type=NoteData)
+        note_data = convert(raw_note_data, type=NoteData)
 
         contents = []
         if video_url := note_data.video_url:
-            if preload_data:
-                preload_data = convert(preload_data, type=NormalNotePreloadData)
-                img_urls = preload_data.image_urls
-            else:
-                img_urls = note_data.image_urls
-            contents.append(self.create_video_content(video_url, img_urls[0]))
+            cover_url = self._find_cover_url(preload_data) or self._find_cover_url(raw_note_data)
+            contents.append(self.create_video_content(video_url, cover_url))
         elif img_urls := note_data.image_urls:
             contents.extend(self.create_image_contents(img_urls))
 
@@ -233,6 +228,38 @@ class XHSParser(BaseParser):
         if not user_id:
             return None
         return f"https://www.xiaohongshu.com/user/profile/{user_id}"
+
+    @staticmethod
+    def _find_cover_url(data: Any) -> str | None:
+        """Find the first image-like cover URL from variable XHS video payloads."""
+        preferred_keys = ("firstFrameUrl", "coverUrl", "urlSizeLarge", "urlDefault", "url")
+        nested_keys = (
+            "cover",
+            "coverInfo",
+            "firstFrame",
+            "firstFrameInfo",
+            "imageInfo",
+            "imageList",
+            "imagesList",
+            "thumbnail",
+        )
+
+        def find(value: Any) -> str | None:
+            if isinstance(value, dict):
+                for key in preferred_keys:
+                    candidate = value.get(key)
+                    if isinstance(candidate, str) and candidate.startswith(("http://", "https://")):
+                        return candidate
+                for key in nested_keys:
+                    if (found := find(value.get(key))) is not None:
+                        return found
+            elif isinstance(value, list):
+                for candidate in value:
+                    if (found := find(candidate)) is not None:
+                        return found
+            return None
+
+        return find(data)
 
 
 class Stream(Struct):

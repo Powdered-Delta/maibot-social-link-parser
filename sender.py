@@ -15,6 +15,7 @@ logger = logging.getLogger("plugin.maibot_social_link_parser.sender")
 
 
 class ApiSettings:
+    delivery_mode: str
     host: str
     port: int
     token: str
@@ -24,15 +25,21 @@ class ApiSettings:
 MessageSegment = dict[str, Any]
 
 
-async def send_text(message: dict[str, Any], text: str, api: ApiSettings) -> bool:
+async def send_text(ctx: Any, message: dict[str, Any], text: str, api: ApiSettings) -> bool:
+    if api.delivery_mode == "websocket":
+        return await _send_via_gateway(ctx, message, "text", text)
     return await _send_message(message, [{"type": "text", "data": {"text": text}}], api, timeout=30)
 
 
-async def send_image(message: dict[str, Any], path: Path, api: ApiSettings) -> bool:
+async def send_image(ctx: Any, message: dict[str, Any], path: Path, api: ApiSettings) -> bool:
+    if api.delivery_mode == "websocket":
+        return await _send_via_gateway(ctx, message, "imageurl", {"url": _file_uri(path)})
     return await _send_message(message, [{"type": "image", "data": {"file": _file_uri(path)}}], api, timeout=120)
 
 
-async def send_video(message: dict[str, Any], path: Path, api: ApiSettings) -> bool:
+async def send_video(ctx: Any, message: dict[str, Any], path: Path, api: ApiSettings) -> bool:
+    if api.delivery_mode == "websocket":
+        return await _send_via_gateway(ctx, message, "videourl", {"url": _file_uri(path)})
     return await _send_message(message, [{"type": "video", "data": {"file": _file_uri(path)}}], api, timeout=300)
 
 
@@ -55,10 +62,14 @@ async def send_emoji_reaction(message_id: str | int, emoji_id: int, api: ApiSett
 
 
 async def send_group_forward(
+    ctx: Any,
     message: dict[str, Any],
     nodes: list[list[MessageSegment]],
     api: ApiSettings,
 ) -> bool:
+    if api.delivery_mode == "websocket":
+        # The host gateway has no plugin-facing merged-forward message API yet.
+        return False
     group_id = _get_group_id(message)
     if not group_id:
         return False
@@ -82,6 +93,29 @@ async def send_group_forward(
         api,
         timeout=120,
     )
+
+
+async def _send_via_gateway(ctx: Any, message: dict[str, Any], custom_type: str, data: Any) -> bool:
+    """Send through the active NapCat WebSocket gateway selected by the Host."""
+    stream_id = str(message.get("session_id") or "").strip()
+    if not stream_id:
+        logger.error("Cannot send through gateway: missing session_id")
+        return False
+    try:
+        if custom_type == "text":
+            result = await ctx.send.text(data, stream_id, sync_to_maisaka_history=True)
+        else:
+            result = await ctx.send.custom(
+                custom_type,
+                data,
+                stream_id,
+                sync_to_maisaka_history=True,
+                timeout_ms=300_000 if custom_type == "videourl" else 120_000,
+            )
+    except Exception as exc:
+        logger.error("NapCat WebSocket gateway send failed: %s", exc)
+        return False
+    return bool(result)
 
 
 def text_segment(text: str) -> MessageSegment:
