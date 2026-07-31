@@ -1,7 +1,7 @@
 [plugin]
 name = "maibot_social_link_parser"
-config_version = "0.1.11"
-version = "0.1.11"
+config_version = "0.1.12"
+version = "0.1.12"
 enabled = true
 # Do not send to QQ/NapCat. Parsing and downloads still run for local validation.
 dry_run = false
@@ -17,6 +17,7 @@ max_text_chars = 700
 send_images = true
 send_video = true
 use_forward_for_multi = true
+gallery_delivery_mode = "default"
 download_mode = "confirm"
 pending_download_ttl_seconds = 600
 pending_download_selection = "latest"

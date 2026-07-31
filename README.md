@@ -93,6 +93,7 @@ git clone git@github.com:Powdered-Delta/maibot-social-link-parser.git
 | `plugin.dry_run` | `false` | 演练模式，不实际发送 QQ 消息 |
 | `parser.enabled_platforms` | 抖音、小红书、小黑盒 | WebUI 多选平台开关；B站默认关闭 |
 | `parser.download_mode` | `confirm` | `confirm` 为确认下载，`automatic` 为自动下载 |
+| `parser.gallery_delivery_mode` | `default` | 静态图集默认跟随 QQ 通道；可设为 `http_forward`，经 OneBot HTTP 合并转发发送 |
 | `parser.pending_download_ttl_seconds` | `600` | 等待用户确认下载的有效期，单位秒 |
 | `parser.pending_download_selection` | `latest` | 多条待下载内容时，`latest` 让“下载”选择最新一条；`number` 要求“下载 1”等明确编号 |
 | `parser.send_preview_image` | `true` | 概览是否发送视频封面或图集首图 |

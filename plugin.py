@@ -68,8 +68,8 @@ class PluginSectionConfig(PluginConfigBase):
     __ui_order__: ClassVar[int] = 0
 
     name: str = Field(default="maibot_social_link_parser", description="插件内部名称", json_schema_extra=_ui("插件内部名称", "仅用于标识配置；通常无需修改。", 0, label_en="Internal name", hint_en="Used only to identify this configuration. Usually leave unchanged.", label_ja="内部名", hint_ja="設定識別用です。通常は変更不要です。", disabled=True))
-    config_version: str = Field(default="0.1.11", description="配置文件版本", json_schema_extra=_ui("配置版本", "由插件用于补齐配置字段，请勿手动修改。", 1, label_en="Configuration version", hint_en="Used to merge configuration fields. Do not edit manually.", label_ja="設定バージョン", hint_ja="設定項目の統合に使用します。手動で変更しないでください。", disabled=True))
-    version: str = Field(default="0.1.11", description="插件版本", json_schema_extra=_ui("插件版本", "当前插件版本，仅供查看。", 2, label_en="Plugin version", hint_en="Current plugin version. Read only.", label_ja="プラグインバージョン", hint_ja="現在のプラグインバージョンです。読み取り専用です。", disabled=True))
+    config_version: str = Field(default="0.1.12", description="配置文件版本", json_schema_extra=_ui("配置版本", "由插件用于补齐配置字段，请勿手动修改。", 1, label_en="Configuration version", hint_en="Used to merge configuration fields. Do not edit manually.", label_ja="設定バージョン", hint_ja="設定項目の統合に使用します。手動で変更しないでください。", disabled=True))
+    version: str = Field(default="0.1.12", description="插件版本", json_schema_extra=_ui("插件版本", "当前插件版本，仅供查看。", 2, label_en="Plugin version", hint_en="Current plugin version. Read only.", label_ja="プラグインバージョン", hint_ja="現在のプラグインバージョンです。読み取り専用です。", disabled=True))
     enabled: bool = Field(default=True, description="是否启用插件", json_schema_extra=_ui("启用插件", "关闭后不再识别或处理社媒链接。", 3, label_en="Enable plugin", hint_en="When disabled, social media links are not detected or handled.", label_ja="プラグインを有効化", hint_ja="無効時はソーシャルメディアのリンクを処理しません。"))
     dry_run: bool = Field(default=False, description="演练模式", json_schema_extra=_ui("演练模式", "不向 QQ/NapCat 发送任何消息，仅记录拟发送内容；仍会下载媒体，可能消耗流量和磁盘。", 4, label_en="Dry run", hint_en="Prevents all QQ/NapCat sends and logs intended output. Downloads still run and use bandwidth and disk.", label_ja="ドライラン", hint_ja="QQ/NapCat への送信を行わず、送信予定をログに出します。ダウンロードは実行されます。"))
 
@@ -101,9 +101,10 @@ class ParserSectionConfig(PluginConfigBase):
     send_images: bool = Field(default=True, description="是否发送图片", json_schema_extra=_ui("发送图片", "关闭后图集和图片媒体不会发送；视频封面预览仍由“发送预览图”控制。", 6, label_en="Send images", hint_en="When disabled, galleries and image media are not sent. Video preview is controlled separately.", label_ja="画像を送信", hint_ja="無効時は画像とギャラリーを送信しません。動画プレビューは別設定です。"))
     send_video: bool = Field(default=True, description="是否发送视频", json_schema_extra=_ui("发送视频", "关闭后仍可解析并发送概览，但确认下载后不会回传视频。", 7, label_en="Send videos", hint_en="When disabled, videos are parsed and summarized but are not sent after confirmation.", label_ja="動画を送信", hint_ja="無効時も解析と概要送信は行いますが、確認後に動画は送信しません。"))
     use_forward_for_multi: bool = Field(default=True, description="群聊多图使用合并转发", json_schema_extra=_ui("群聊多图使用合并转发", "仅群聊生效。关闭后图片和失败占位符将逐条发送。", 8, label_en="Use group forward for galleries", hint_en="Groups only. When disabled, images and failure placeholders are sent one by one.", label_ja="ギャラリーを結合転送で送信", hint_ja="グループのみ有効です。無効時は画像と失敗表示を個別に送信します。"))
-    download_mode: Literal["confirm", "automatic"] = Field(default="confirm", description="下载模式", json_schema_extra={**_ui("下载模式", "确认下载更适合生产群聊：先发概览，只有原发送者回复“下载”才下载完整媒体。自动下载会立即消耗带宽和存储。", 9, label_en="Download mode", hint_en="Confirm is safer for groups: send an overview first and download only after the original sender replies. Automatic download immediately uses bandwidth and storage.", label_ja="ダウンロードモード", hint_ja="確認モードはグループ向けです。概要を送信後、元の送信者の確認でダウンロードします。自動モードは即座に通信量とストレージを消費します。"), "widget": "select", "options": [{"label": "确认后下载", "value": "confirm"}, {"label": "自动下载", "value": "automatic"}]})
-    pending_download_ttl_seconds: int = Field(default=600, description="等待确认有效期", ge=60, le=3600, json_schema_extra=_ui("等待确认有效期（秒）", "确认下载任务过期后需要重新发送链接。", 10, label_en="Confirmation expiry (seconds)", hint_en="After expiration, send the link again to create a new download request.", label_ja="確認の有効期限（秒）", hint_ja="期限切れ後は、新しいダウンロード要求を作るためにリンクを再送してください。"))
-    pending_download_selection: Literal["latest", "number"] = Field(default="latest", description="多条待下载内容的选择方式", json_schema_extra={**_ui("多条待下载内容的选择方式", "默认“下载”会下载同一会话内最新一条内容，并在开始消息中说明队列情况。选择“回复编号”后，存在多条内容时必须回复“下载 1”“下载 2”等明确编号。当前消息网关未向插件稳定提供回复目标 ID，因此无法可靠按 QQ 回复引用选择。", 11, label_en="Multiple pending-download selection", hint_en="By default, Download selects the newest item in the same session and reports queue state. Choose Number to require Download 1, Download 2, etc. The current gateway does not reliably expose reply target IDs to plugins, so QQ reply references cannot be used safely yet.", label_ja="複数待機ダウンロードの選択方法", hint_ja="既定では、ダウンロードは同一セッション内の最新項目を選び、キュー状態を通知します。番号指定では「ダウンロード 1」などが必要です。現在のゲートウェイは返信先 ID をプラグインに安定して渡さないため、QQ の返信引用はまだ安全に利用できません。"), "widget": "select", "options": [{"label": "最新一条（默认）", "value": "latest"}, {"label": "回复编号", "value": "number"}]})
+    gallery_delivery_mode: Literal["default", "http_forward"] = Field(default="default", description="图集发送通道", json_schema_extra={**_ui("图集发送通道", "默认跟随 QQ 发送通道。选择“HTTP 合并转发”时，静态图集和图文会通过 OneBot HTTP 合并转发发送；需要在“HTTP 兼容后备”中填写可访问的 NapCat HTTP 地址。HTTP 失败时回退为默认通道逐条发送。含视频或 Live Photo 的混合图集仍使用默认通道逐条发送。", 9, label_en="Gallery delivery channel", hint_en="Default follows the QQ delivery channel. HTTP forward sends static galleries through OneBot HTTP merged forwarding and requires the HTTP fallback settings. Failed HTTP delivery falls back to the default channel one item at a time. Mixed galleries with video or Live Photo still use the default channel.", label_ja="ギャラリー配信チャネル", hint_ja="既定では QQ 配信チャネルに従います。HTTP 結合転送では静的ギャラリーを OneBot HTTP の結合転送で送信し、HTTP 互換設定が必要です。失敗時は既定チャネルで個別送信します。動画や Live Photo を含む混合ギャラリーは既定チャネルを使用します。"), "widget": "select", "options": [{"label": "跟随默认通道", "value": "default"}, {"label": "HTTP 合并转发", "value": "http_forward"}]})
+    download_mode: Literal["confirm", "automatic"] = Field(default="confirm", description="下载模式", json_schema_extra={**_ui("下载模式", "确认下载更适合生产群聊：先发概览，只有原发送者回复“下载”才下载完整媒体。自动下载会立即消耗带宽和存储。", 10, label_en="Download mode", hint_en="Confirm is safer for groups: send an overview first and download only after the original sender replies. Automatic download immediately uses bandwidth and storage.", label_ja="ダウンロードモード", hint_ja="確認モードはグループ向けです。概要を送信後、元の送信者の確認でダウンロードします。自動モードは即座に通信量とストレージを消費します。"), "widget": "select", "options": [{"label": "确认后下载", "value": "confirm"}, {"label": "自动下载", "value": "automatic"}]})
+    pending_download_ttl_seconds: int = Field(default=600, description="等待确认有效期", ge=60, le=3600, json_schema_extra=_ui("等待确认有效期（秒）", "确认下载任务过期后需要重新发送链接。", 11, label_en="Confirmation expiry (seconds)", hint_en="After expiration, send the link again to create a new download request.", label_ja="確認の有効期限（秒）", hint_ja="期限切れ後は、新しいダウンロード要求を作るためにリンクを再送してください。"))
+    pending_download_selection: Literal["latest", "number"] = Field(default="latest", description="多条待下载内容的选择方式", json_schema_extra={**_ui("多条待下载内容的选择方式", "默认“下载”会下载同一会话内最新一条内容，并在开始消息中说明队列情况。选择“回复编号”后，存在多条内容时必须回复“下载 1”“下载 2”等明确编号。当前消息网关未向插件稳定提供回复目标 ID，因此无法可靠按 QQ 回复引用选择。", 12, label_en="Multiple pending-download selection", hint_en="By default, Download selects the newest item in the same session and reports queue state. Choose Number to require Download 1, Download 2, etc. The current gateway does not reliably expose reply target IDs to plugins, so QQ reply references cannot be used safely yet.", label_ja="複数待機ダウンロードの選択方法", hint_ja="既定では、ダウンロードは同一セッション内の最新項目を選び、キュー状態を通知します。番号指定では「ダウンロード 1」などが必要です。現在のゲートウェイは返信先 ID をプラグインに安定して渡さないため、QQ の返信引用はまだ安全に利用できません。"), "widget": "select", "options": [{"label": "最新一条（默认）", "value": "latest"}, {"label": "回复编号", "value": "number"}]})
     send_preview_image: bool = Field(default=True, description="是否发送封面或首图预览", json_schema_extra=_ui("发送封面或首图预览", "确认模式下下载视频封面或图集首图，用于让用户在完整下载前确认内容。", 12, label_en="Send cover or first-image preview", hint_en="In confirm mode, download a video cover or first gallery image so users can verify content before the full download.", label_ja="カバーまたは先頭画像のプレビューを送信", hint_ja="確認モードでは、完全なダウンロード前に内容を確認できるよう動画カバーまたは先頭画像を取得します。"))
     reaction_emoji_enabled: bool = Field(default=True, description="识别后表情回应", json_schema_extra=_ui("识别后表情回应", "对群聊原消息调用 NapCat 表情回应 API；私聊不会执行。", 13, label_en="React after recognition", hint_en="Calls NapCat's reaction API for the original group message. It is not used in private chats.", label_ja="認識後にリアクション", hint_ja="元のグループメッセージに NapCat のリアクション API を使用します。個別チャットでは実行しません。"))
     reaction_emoji_id: int = Field(default=76, description="QQ 表情回应 ID", ge=1, json_schema_extra=_ui("QQ 表情回应 ID", "NapCat `set_msg_emoji_like` 使用的数字表情 ID。仅在已启用表情回应时生效。", 14, label_en="QQ reaction emoji ID", hint_en="Numeric emoji ID for NapCat set_msg_emoji_like. Used only when reactions are enabled.", label_ja="QQ リアクション絵文字 ID", hint_ja="NapCat set_msg_emoji_like に使用する数値 ID です。リアクション有効時のみ使用します。"))
@@ -286,8 +287,8 @@ class MultiPlatformParserPlugin(MaiBotPlugin):
                 if not await self._send_result(message, result):
                     await self._send_text(message, "原媒体下载或发送失败，请稍后重试。")
                 return
-            await self._send_overview(message, result)
             self._store_pending_download(message, parser, keyword, searched, url, result.title)
+            await self._send_overview(message, result)
         except Exception as exc:
             self.ctx.logger.warning("Multi platform parser failed for %s: %s", url, exc)
             await self._send_text(message, "这个链接解析失败了，请稍后重试。")
@@ -370,7 +371,8 @@ class MultiPlatformParserPlugin(MaiBotPlugin):
         sent_forward = False
         all_sent = True
         if self.config.parser.use_forward_for_multi and len(nodes) > 1 and self._get_group_id(message):
-            sent_forward = await self._send_group_forward(message, nodes)
+            forward_mode = "http" if self.config.parser.gallery_delivery_mode == "http_forward" else None
+            sent_forward = await self._send_group_forward(message, nodes, delivery_mode=forward_mode)
 
         if not sent_forward:
             if header:
@@ -455,11 +457,11 @@ class MultiPlatformParserPlugin(MaiBotPlugin):
             return True
         return await send_video(self.ctx, message, path, self.config.delivery.delivery_mode, self.config.api)
 
-    async def _send_group_forward(self, message: dict[str, Any], nodes: list[list[dict[str, Any]]]) -> bool:
+    async def _send_group_forward(self, message: dict[str, Any], nodes: list[list[dict[str, Any]]], *, delivery_mode: str | None = None) -> bool:
         if self.config.plugin.dry_run:
             self.ctx.logger.info("[dry_run] group_forward: nodes=%s", len(nodes))
             return True
-        return await send_group_forward(self.ctx, message, nodes, self.config.delivery.delivery_mode, self.config.api)
+        return await send_group_forward(self.ctx, message, nodes, delivery_mode or self.config.delivery.delivery_mode, self.config.api)
 
     async def _send_emoji_reaction(self, message_id: str | int, emoji_id: int) -> bool:
         if self.config.plugin.dry_run:
