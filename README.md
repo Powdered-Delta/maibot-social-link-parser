@@ -93,11 +93,10 @@ git clone git@github.com:Powdered-Delta/maibot-social-link-parser.git
 | `plugin.dry_run` | `false` | 演练模式，不实际发送 QQ 消息 |
 | `parser.enabled_platforms` | 抖音、小红书、小黑盒 | WebUI 多选平台开关；B站默认关闭 |
 | `parser.download_mode` | `confirm` | `confirm` 为确认下载，`automatic` 为自动下载 |
-| `parser.gallery_delivery_mode` | `default` | 静态图集默认跟随 QQ 通道；可设为 `http_forward`，经 OneBot HTTP 合并转发发送 |
+| `parser.gallery_delivery_mode` | `default` | 静态图集默认跟随 QQ 通道；WebSocket 经 MaiBot 合并转发发送，可设为 `http_forward` 使用 OneBot HTTP |
 | `parser.pending_download_ttl_seconds` | `600` | 等待用户确认下载的有效期，单位秒 |
 | `parser.pending_download_selection` | `latest` | 多条待下载内容时，`latest` 让“下载”选择最新一条；`number` 要求“下载 1”等明确编号 |
 | `parser.send_preview_image` | `true` | 概览是否发送视频封面或图集首图 |
-| `parser.overview_hybrid_message_beta` | `false` | 测试功能：将概览文字、预览图和下载提示合并为一条普通 QQ 消息；失败时回退为分开发送 |
 | `parser.reaction_emoji_enabled` | `true` | 识别链接后是否添加 QQ 表情回应 |
 | `parser.group_whitelist` | `[]` | 自动解析群白名单；空列表表示所有群 |
 | `parser.block_ai_reply` | `true` | 命中链接后是否中止 MaiBot 普通聊天流程 |
@@ -105,9 +104,9 @@ git clone git@github.com:Powdered-Delta/maibot-social-link-parser.git
 | `delivery.delivery_mode` | `websocket` | 默认经 MaiBot 的 NapCat WebSocket 网关发送；可改为 `http` 使用兼容直连 |
 | `api.host`、`api.port`、`api.token` | - | 仅 `delivery.delivery_mode = "http"` 时使用的 NapCat OneBot HTTP 配置 |
 
-默认通过 MaiBot 已启用的 NapCat WebSocket 网关发送，配置页的“HTTP 兼容后备”分组无需填写。选择 HTTP 兼容模式时，才需要让 `api.host`、`api.port`、`api.token` 指向 MaiBot 容器可访问的 NapCat OneBot HTTP 服务。
+默认通过 MaiBot 已启用的 NapCat WebSocket 网关发送，配置页的“HTTP 兼容后备”分组无需填写。静态图集或图文会经 `send.forward` 作为合并转发发送，图片以 Base64 传给 Host，不依赖 NapCat 读取 MaiBot 的本地媒体路径。选择 HTTP 兼容模式时，才需要让 `api.host`、`api.port`、`api.token` 指向 MaiBot 容器可访问的 NapCat OneBot HTTP 服务。
 
-`parser.overview_hybrid_message_beta` 默认关闭。开启后，支持 `send.hybrid` 的 MaiBot Host 会将标题、作者、正文、链接、预览图和“回复“下载”获取原媒体”组合成一条普通 QQ 图文消息，不使用合并转发。发送失败时会自动退回为原有的文字和预览图两条消息。
+支持 `send.hybrid` 的 MaiBot Host 会将标题、作者、正文、链接、预览图和“回复“下载”获取原媒体”组合成一条普通 QQ 图文消息，不使用合并转发。发送失败时会自动退回为原有的文字和预览图两条消息。
 
 ## 本地演练模式
 
@@ -125,7 +124,7 @@ git clone git@github.com:Powdered-Delta/maibot-social-link-parser.git
 
 ## 已知边界
 
-- 默认 QQ 发送通过 MaiBot 的 NapCat WebSocket 网关；HTTP 是可选兼容模式。WebSocket 模式下图集逐条发送，HTTP 模式可使用合并转发。
+- 默认 QQ 发送通过 MaiBot 的 NapCat WebSocket 网关；静态图集会使用合并转发，HTTP 是可选兼容模式。含视频或 Live Photo 的混合图集保持按原始顺序逐条发送。
 - 图集发送保留下载到的源文件；MaiBot 聊天记录整合只消费摘要和元数据，不参与原图再编码。
 - NapCat 与 MaiBot 分属不同容器时，`file://` 媒体路径必须对 NapCat 可见。生产环境需配置共享 volume 或保留现有可用的媒体路径方案。
 - B站的完整下载能力默认关闭，不与独立 B站视频插件争夺链接。

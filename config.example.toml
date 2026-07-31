@@ -1,7 +1,7 @@
 [plugin]
 name = "maibot_social_link_parser"
-config_version = "0.1.15"
-version = "0.1.15"
+config_version = "0.1.16"
+version = "0.1.16"
 enabled = true
 # Do not send to QQ/NapCat. Parsing and downloads still run for local validation.
 dry_run = false
@@ -22,8 +22,6 @@ download_mode = "confirm"
 pending_download_ttl_seconds = 600
 pending_download_selection = "latest"
 send_preview_image = true
-# Beta: send overview text, preview, and confirmation prompt in one normal QQ message.
-overview_hybrid_message_beta = false
 reaction_emoji_enabled = true
 reaction_emoji_id = 76
 source_max_size_mb = 80

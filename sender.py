@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import logging
 import urllib.parse
 import urllib.request
@@ -113,8 +114,7 @@ async def send_group_forward(
     api: ApiSettings,
 ) -> bool:
     if delivery_mode == "websocket":
-        # The host gateway has no plugin-facing merged-forward message API yet.
-        return False
+        return await _send_forward_via_gateway(ctx, message, nodes)
     group_id = _get_group_id(message)
     if not group_id:
         return False
@@ -138,6 +138,45 @@ async def send_group_forward(
         api,
         timeout=120,
     )
+
+
+async def _send_forward_via_gateway(ctx: Any, message: dict[str, Any], nodes: list[list[MessageSegment]]) -> bool:
+    """Send a merged forward through the Host's active message gateway."""
+    stream_id = str(message.get("session_id") or "").strip()
+    if not stream_id:
+        logger.error("Cannot send merged forward through gateway: missing session_id")
+        return False
+
+    self_id = _get_self_id(message)
+    messages = []
+    try:
+        for node in nodes:
+            segments = []
+            for segment in node:
+                if segment.get("type") == "text":
+                    segments.append({"type": "text", "content": str(segment.get("data", {}).get("text", ""))})
+                elif segment.get("type") == "image":
+                    image_path = _path_from_image_segment(segment)
+                    segments.append(
+                        {
+                            "type": "image",
+                            "content": base64.b64encode(image_path.read_bytes()).decode("ascii"),
+                        }
+                    )
+            if segments:
+                messages.append({"user_id": self_id, "nickname": "麦麦解析", "segments": segments})
+    except OSError as exc:
+        logger.error("Cannot read merged-forward image: %s", exc)
+        return False
+
+    if not messages:
+        return True
+    try:
+        result = await ctx.send.forward(messages, stream_id, sync_to_maisaka_history=True)
+    except Exception as exc:
+        logger.error("NapCat WebSocket merged-forward send failed: %s", exc)
+        return False
+    return bool(result)
 
 
 async def _send_via_gateway(ctx: Any, message: dict[str, Any], custom_type: str, data: Any) -> bool:
@@ -233,6 +272,14 @@ def _file_uri(path: Path) -> str:
     return "file:///" + urllib.request.pathname2url(value).lstrip("/")
 
 
+def _path_from_image_segment(segment: MessageSegment) -> Path:
+    file_value = str(segment.get("data", {}).get("file", ""))
+    if file_value.startswith("file://"):
+        parsed = urllib.parse.urlparse(file_value)
+        return Path(urllib.request.url2pathname(parsed.path))
+    return Path(file_value)
+
+
 def _is_private_message(message: dict[str, Any]) -> bool:
     message_info = message.get("message_info", {})
     return bool(message_info) and message_info.get("group_info") is None
@@ -250,3 +297,10 @@ def _get_group_id(message: dict[str, Any]) -> str | None:
     group_info = message_info.get("group_info") if isinstance(message_info, dict) else None
     group_id = group_info.get("group_id") if isinstance(group_info, dict) else None
     return str(group_id) if group_id else None
+
+
+def _get_self_id(message: dict[str, Any]) -> str:
+    message_info = message.get("message_info", {})
+    additional_config = message_info.get("additional_config", {}) if isinstance(message_info, dict) else {}
+    self_id = additional_config.get("self_id") if isinstance(additional_config, dict) else None
+    return str(self_id or "")
