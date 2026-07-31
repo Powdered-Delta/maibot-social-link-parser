@@ -73,6 +73,9 @@ class XHSParser(BaseParser):
             html = await resp.text()
             logger.debug(f"url: {resp.url} | status: {resp.status}")
 
+        if self._is_security_page(str(resp.url), html):
+            raise ParseException("小红书访问被拦截（安全校验页），请稍后重试或配置 Cookie/代理")
+
         json_obj = self._extract_initial_state_json(html)
 
         # ["note"]["noteDetailMap"][xhs_id]["note"]
@@ -147,6 +150,9 @@ class XHSParser(BaseParser):
             allow_redirects=True,
         ) as resp:
             html = await resp.text()
+
+        if self._is_security_page(str(resp.url), html):
+            raise ParseException("小红书访问被拦截（安全校验页），请稍后重试或配置 Cookie/代理")
 
         json_obj = self._extract_initial_state_json(html)
         note_data = json_obj.get("noteData")
@@ -231,6 +237,14 @@ class XHSParser(BaseParser):
         if not user_id:
             return None
         return f"https://www.xiaohongshu.com/user/profile/{user_id}"
+
+    @staticmethod
+    def _is_security_page(final_url: str, html: str) -> bool:
+        if "/404/sec_" in final_url:
+            return True
+        if re.search(r'<div[^>]+class="not-found-container"', html):
+            return True
+        return False
 
     @staticmethod
     def _find_cover_url(data: Any) -> str | None:
