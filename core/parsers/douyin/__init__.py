@@ -14,6 +14,8 @@ from ..base import (
     Platform,
     handle,
 )
+from .slides import SlidesInfo
+from .video import RouterData
 
 if TYPE_CHECKING:
     from ...data import ParseResult
@@ -129,8 +131,6 @@ class DouyinParser(BaseParser):
 
         logger.debug("[抖音] 成功提取 window._ROUTER_DATA")
 
-        from .video import RouterData
-
         video_data = msgspec.json.decode(
             matched.group(1).strip(), type=RouterData
         ).video_data
@@ -186,8 +186,6 @@ class DouyinParser(BaseParser):
             set_cookie_headers = resp.headers.getall("Set-Cookie", [])
             self.cookiejar.update_from_response(set_cookie_headers)
             self._set_cookies()
-
-            from .slides import SlidesInfo
 
             response_text = await resp.read()
             logger.debug(f"[抖音] 幻灯片API响应体大小: {len(response_text)} 字节")

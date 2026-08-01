@@ -292,6 +292,12 @@ class MultiPlatformParserPlugin(MaiBotPlugin):
             await self._send_overview(message, result)
         except Exception as exc:
             self.ctx.logger.warning("Multi platform parser failed for %s: %s", url, exc)
+            if isinstance(exc, ModuleNotFoundError) and "_maibot_plugin_" in str(exc):
+                await self._send_text(
+                    message,
+                    "插件状态异常（模块加载失效），请联系管理员重启机器人或重载插件后重试。",
+                )
+                return
             await self._send_text(message, "这个链接解析失败了，请稍后重试。")
 
     async def _download_pending_task(self, pending: PendingDownload, message: dict[str, Any]) -> None:

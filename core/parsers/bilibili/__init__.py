@@ -19,6 +19,11 @@ from ..base import (
     handle,
 )
 from .login import BilibiliLogin
+from .dynamic import DynamicData
+from .favlist import FavData
+from .live import RoomData
+from .opus import ImageNode, OpusItem, TextNode
+from .video import AIConclusion, VideoInfo
 
 # 选择客户端
 select_client("curl_cffi")
@@ -141,8 +146,6 @@ class BilibiliParser(BaseParser):
             page_num (int): 页码
         """
 
-        from .video import AIConclusion, VideoInfo
-
         video = await self._get_video(bvid=bvid, avid=avid)
         # 转换为 msgspec struct
         video_info = convert(await video.get_info(), VideoInfo)
@@ -216,8 +219,6 @@ class BilibiliParser(BaseParser):
         """
         from bilibili_api.dynamic import Dynamic
 
-        from .dynamic import DynamicData
-
         dynamic_ = Dynamic(dynamic_id, await self.login.credential)
 
         dynamic_info = convert(await dynamic_.get_info(), DynamicData).item
@@ -265,8 +266,6 @@ class BilibiliParser(BaseParser):
         Returns:
             ParseResult: 解析结果
         """
-        from .opus import ImageNode, OpusItem, TextNode
-
         opus_info = await bili_opus.get_info()
         if not isinstance(opus_info, dict):
             raise ParseException("获取图文动态信息失败")
@@ -305,8 +304,6 @@ class BilibiliParser(BaseParser):
             ParseResult: 解析结果
         """
         from bilibili_api.live import LiveRoom
-
-        from .live import RoomData
 
         room = LiveRoom(room_display_id=room_id, credential=await self.login.credential)
         info_dict = await room.get_room_info()
@@ -348,8 +345,6 @@ class BilibiliParser(BaseParser):
             list[GraphicsContent]: 图文内容列表
         """
         from bilibili_api.favorite_list import get_video_favorite_list_content
-
-        from .favlist import FavData
 
         # 只会取一页，20 个
         fav_dict = await get_video_favorite_list_content(fav_id)
