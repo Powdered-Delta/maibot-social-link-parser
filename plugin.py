@@ -244,7 +244,7 @@ class MultiPlatformParserPlugin(MaiBotPlugin):
         if not self._is_allowed_message(message):
             return None
 
-        source = self._message_source(message)
+        source = self._strip_bot_download_hint(self._message_source(message))
         session_id = self._session_id(message)
         sender_id = self._get_user_id(message)
         if self._is_download_confirmation(source):
@@ -605,6 +605,11 @@ class MultiPlatformParserPlugin(MaiBotPlugin):
                 continue
             parts.extend(self._urls_from_payload(seg))
         return "\n".join(parts)
+
+    @staticmethod
+    def _strip_bot_download_hint(text: str) -> str:
+        """去除 bot 自己附带的下载提示文案，避免被误判为下载意图。"""
+        return re.sub(r"回复[“”\"'『「]下载[“”\"'』」]获取原媒体[。.]?", "", text)
 
     def _extract_urls(self, text: str) -> list[str]:
         seen: set[str] = set()
