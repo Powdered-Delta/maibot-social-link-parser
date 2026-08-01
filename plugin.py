@@ -95,6 +95,12 @@ class ParserSectionConfig(PluginConfigBase):
         },
     )
     group_whitelist: list[str] = Field(default_factory=list, description="自动解析群白名单", json_schema_extra=_ui("自动解析群白名单", "仅这些 QQ 群自动解析；留空表示所有群。填入群号字符串。", 1, label_en="Group allowlist", hint_en="Only parse automatically in these QQ groups. Leave empty for all groups. Enter group IDs as strings.", label_ja="グループ許可リスト", hint_ja="指定した QQ グループでのみ自動解析します。空欄は全グループです。グループ ID を文字列で入力します。"))
+    group_blacklist: list[str] = Field(default_factory=list, description="自动解析群黑名单", json_schema_extra=_ui("自动解析群黑名单", "这些 QQ 群不自动解析。填入群号字符串。与白名单同时命中时黑名单优先。", 1, label_en="Group denylist", hint_en="Never parse automatically in these QQ groups. Enter group IDs as strings. Denylist wins when it overlaps the allowlist.", label_ja="グループ拒否リスト", hint_ja="自動解析しない QQ グループです。グループ ID を文字列で入力します。許可リストと重複した場合は拒否が優先されます。"))
+    user_whitelist: list[str] = Field(default_factory=list, description="自动解析用户白名单", json_schema_extra=_ui("自动解析用户白名单", "仅这些 QQ 用户发送的链接会解析；留空表示所有用户。同时作用于群聊和私聊。填入 QQ 号字符串。", 1, label_en="User allowlist", hint_en="Only parse links sent by these QQ users. Leave empty for all users. Applies to both group and private chats. Enter QQ numbers as strings.", label_ja="ユーザー許可リスト", hint_ja="指定した QQ ユーザーが送信したリンクのみ解析します。空欄は全ユーザーです。グループと個別チャットの両方に適用されます。QQ 番号を文字列で入力します。"))
+    user_blacklist: list[str] = Field(default_factory=list, description="自动解析用户黑名单", json_schema_extra=_ui("自动解析用户黑名单", "这些 QQ 用户发送的链接不解析。填入 QQ 号字符串。与白名单同时命中时黑名单优先。", 1, label_en="User denylist", hint_en="Never parse links sent by these QQ users. Enter QQ numbers as strings. Denylist wins when it overlaps the allowlist.", label_ja="ユーザー拒否リスト", hint_ja="指定した QQ ユーザーが送信したリンクを解析しません。QQ 番号を文字列で入力します。許可リストと重複した場合は拒否が優先されます。"))
+    private_whitelist: list[str] = Field(default_factory=list, description="私聊自动解析用户白名单", json_schema_extra=_ui("私聊自动解析用户白名单", "仅这些 QQ 用户的私聊链接会解析；留空表示允许所有私聊。填入 QQ 号字符串。", 1, label_en="Private-chat user allowlist", hint_en="Only parse private-chat links from these QQ users. Leave empty to allow all private chats. Enter QQ numbers as strings.", label_ja="個別チャット許可リスト", hint_ja="指定した QQ ユーザーとの個別チャットのリンクのみ解析します。空欄はすべての個別チャットを許可します。QQ 番号を文字列で入力します。"))
+    private_blacklist: list[str] = Field(default_factory=list, description="私聊自动解析用户黑名单", json_schema_extra=_ui("私聊自动解析用户黑名单", "这些 QQ 用户的私聊链接不解析。填入 QQ 号字符串。与白名单同时命中时黑名单优先。", 1, label_en="Private-chat user denylist", hint_en="Never parse private-chat links from these QQ users. Enter QQ numbers as strings. Denylist wins when it overlaps the allowlist.", label_ja="個別チャット拒否リスト", hint_ja="指定した QQ ユーザーとの個別チャットのリンクを解析しません。QQ 番号を文字列で入力します。許可リストと重複した場合は拒否が優先されます。"))
+    download_intent_regex: str = Field(default="", description="自定义下载确认意图正则", json_schema_extra=_ui("自定义下载确认意图正则", "追加的确认下载触发正则，与默认的“下载/帮我下载/发视频/保存”取并集；同时支持“下载 1”这类编号选择。留空仅使用默认意图。", 1, label_en="Custom download-intent regex", hint_en="Extra regex that triggers confirmation downloads, combined with the defaults 下载/帮我下载/发视频/保存. Numbered selections such as 下载 1 are supported. Leave empty to use the defaults only.", label_ja="ダウンロード意思カスタム正規表現", hint_ja="確認ダウンロードを開始する追加の正規表現です。既定の「下载/帮我下载/发视频/保存」と併用され、「下载 1」のような番号指定も対応します。空欄は既定のみです。", placeholder=r"下載|down ?load"))
     block_ai_reply: bool = Field(default=True, description="阻止普通 AI 回复", json_schema_extra=_ui("阻止普通 AI 回复", "链接命中后中止 MaiBot 常规聊天处理，避免链接解析和 AI 回复重复发送。", 2, label_en="Block normal AI reply", hint_en="Stops regular MaiBot chat handling after a matching link to avoid duplicate parser and AI replies.", label_ja="通常の AI 返信を停止", hint_ja="リンク検出後に通常のチャット処理を止め、解析結果との重複返信を避けます。"))
     debounce_seconds: int = Field(default=120, description="链接去重时间", ge=0, json_schema_extra=_ui("链接去重时间（秒）", "同一会话内重复发送同一链接时的忽略时长；设为 0 禁用去重。", 3, label_en="Link deduplication (seconds)", hint_en="Ignore repeated copies of the same link in one session. Set 0 to disable.", label_ja="リンク重複除外（秒）", hint_ja="同一セッション内で同じリンクを再送した場合の無視時間です。0 で無効化します。"))
     max_images: int = Field(default=9, description="单条链接最多发送图片数", ge=1, le=30, json_schema_extra=_ui("最多发送图片数", "完整图集发送时的最大图片数；超过部分不会发送。", 4, label_en="Maximum images", hint_en="Maximum images sent for one link. Extra images are skipped.", label_ja="最大画像数", hint_ja="1 リンクで送信する画像数の上限です。超過分は送信しません。"))
@@ -235,7 +241,7 @@ class MultiPlatformParserPlugin(MaiBotPlugin):
             return None
 
         message: dict[str, Any] = kwargs.get("message", {}) or {}
-        if not self._is_allowed_group(message):
+        if not self._is_allowed_message(message):
             return None
 
         source = self._message_source(message)
@@ -690,8 +696,8 @@ class MultiPlatformParserPlugin(MaiBotPlugin):
             self._pending_downloads.pop(key, None)
             return None, [], 0
 
-        if selected := re.search(r"(?:下载|帮我下载|发视频|保存)\s*([1-9]\d*)", source):
-            index = int(selected.group(1)) - 1
+        if selected := re.search(rf"{self._download_intent_pattern()}\s*(?P<num>[1-9]\d*)", source):
+            index = int(selected.group("num")) - 1
             if 0 <= index < len(entries):
                 pending = entries.pop(index)
                 if entries:
@@ -722,9 +728,13 @@ class MultiPlatformParserPlugin(MaiBotPlugin):
         self._pending_downloads[key] = entries
         return None, entries, len(entries)
 
-    @staticmethod
-    def _is_download_confirmation(text: str) -> bool:
-        return bool(re.search(r"(?:^|[，,。！!\s])(?:下载|帮我下载|发视频|保存)(?:\s*[1-9]\d*)?(?:[。！!\s]|$)", text.strip()))
+    def _download_intent_pattern(self) -> str:
+        default = r"下载|帮我下载|发视频|保存"
+        custom = (self.config.parser.download_intent_regex or "").strip()
+        return f"(?:{default}|{custom})" if custom else f"(?:{default})"
+
+    def _is_download_confirmation(self, text: str) -> bool:
+        return bool(re.search(rf"(?:^|[，,。！!\s]){self._download_intent_pattern()}(?:\s*[1-9]\d*)?(?:[。！!\s]|$)", text.strip()))
 
     @staticmethod
     def _pending_choice_prompt(entries: list[PendingDownload]) -> str:
@@ -757,12 +767,38 @@ class MultiPlatformParserPlugin(MaiBotPlugin):
     def _session_id(self, message: dict[str, Any]) -> str:
         return str(message.get("session_id", "") or self._group_or_user_id(message) or "unknown")
 
-    def _is_allowed_group(self, message: dict[str, Any]) -> bool:
+    def _is_allowed_message(self, message: dict[str, Any]) -> bool:
+        """应用群聊/私聊/用户的 黑白名单。黑名单优先于白名单。"""
         group_id = self._get_group_id(message)
-        if not group_id:
-            return True
-        whitelist = [str(item) for item in self.config.parser.group_whitelist if str(item).strip()]
-        return not whitelist or group_id in whitelist
+        user_id = self._get_user_id(message)
+
+        def norm(items: list[str]) -> set[str]:
+            return {str(item).strip() for item in items if str(item).strip()}
+
+        group_allow = norm(self.config.parser.group_whitelist)
+        group_block = norm(self.config.parser.group_blacklist)
+        user_allow = norm(self.config.parser.user_whitelist)
+        user_block = norm(self.config.parser.user_blacklist)
+        private_allow = norm(self.config.parser.private_whitelist)
+        private_block = norm(self.config.parser.private_blacklist)
+
+        if group_id:
+            if group_id in group_block:
+                return False
+            if group_allow and group_id not in group_allow:
+                return False
+        else:
+            if user_id and user_id in private_block:
+                return False
+            if private_allow and (not user_id or user_id not in private_allow):
+                return False
+
+        if user_id:
+            if user_id in user_block:
+                return False
+            if user_allow and user_id not in user_allow:
+                return False
+        return True
 
     def _is_recent(self, session_id: str, url: str) -> bool:
         interval = int(self.config.parser.debounce_seconds)

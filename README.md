@@ -25,7 +25,7 @@
 - [ ] 为确认下载状态机补充显式命令，例如 `/链接解析下载 <链接>`，用于多条待下载任务时的无歧义选择。
 - [ ] 增加单元测试，覆盖小红书 `.cn` 短链、确认下载权限隔离、Range 续传和图集失败占位符。
 - [ ] 接入并修复 X/Twitter：优先使用现有 xdown 路径，补齐 `x.com`、`twitter.com`、`mobile.twitter.com` 识别；yt-dlp 作为可选后备。
-- [ ] 增加可配置的下载意图正则、群聊/私聊/用户黑白名单，并保持默认确认下载策略。
+- [x] 增加可配置的下载意图正则、群聊/私聊/用户黑白名单，并保持默认确认下载策略。
 
 ## 支持平台
 
@@ -101,7 +101,13 @@ git clone git@github.com:Powdered-Delta/maibot-social-link-parser.git
 | `parser.pending_download_selection` | `latest` | 多条待下载内容时，`latest` 让“下载”选择最新一条；`number` 要求“下载 1”等明确编号 |
 | `parser.send_preview_image` | `true` | 概览是否发送视频封面或图集首图 |
 | `parser.reaction_emoji_enabled` | `true` | 识别链接后是否添加 QQ 表情回应 |
-| `parser.group_whitelist` | `[]` | 自动解析群白名单；空列表表示所有群 |
+| `parser.group_whitelist` | `[]` | 仅这些群自动解析；留空表示所有群 |
+| `parser.group_blacklist` | `[]` | 这些群不自动解析；与白名单重叠时黑名单优先 |
+| `parser.user_whitelist` | `[]` | 仅这些用户的链接会解析（群聊与私聊均生效）；留空表示所有用户 |
+| `parser.user_blacklist` | `[]` | 这些用户的链接不解析；与白名单重叠时黑名单优先 |
+| `parser.private_whitelist` | `[]` | 仅这些用户的私聊链接会解析；留空表示允许所有私聊 |
+| `parser.private_blacklist` | `[]` | 这些用户的私聊链接不解析 |
+| `parser.download_intent_regex` | `""` | 追加的下载确认意图正则，与默认“下载/帮我下载/发视频/保存”取并集，同时支持“下载 1”编号选择；留空仅用默认 |
 | `parser.block_ai_reply` | `true` | 命中链接后是否中止 MaiBot 普通聊天流程 |
 | `network.download_retry_times` | `3` | 媒体下载重试次数 |
 | `delivery.delivery_mode` | `websocket` | 默认经 MaiBot 的 NapCat WebSocket 网关发送；可改为 `http` 使用兼容直连 |

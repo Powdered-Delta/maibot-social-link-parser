@@ -9,7 +9,16 @@ dry_run = false
 [parser]
 # Keep bilibili disabled while the standalone Bilibili plugin is enabled.
 enabled_platforms = ["douyin", "xhs", "xiaoheihe"]
+# Access control. Denylist wins when it overlaps the allowlist.
 group_whitelist = []
+group_blacklist = []
+user_whitelist = []
+user_blacklist = []
+private_whitelist = []
+private_blacklist = []
+# Extra regex merged with the default intents (下载/帮我下载/发视频/保存).
+# Leave empty to use the defaults only.
+download_intent_regex = ""
 block_ai_reply = true
 debounce_seconds = 120
 max_images = 9
