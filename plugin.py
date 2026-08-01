@@ -245,7 +245,6 @@ class MultiPlatformParserPlugin(MaiBotPlugin):
             return None
 
         source = self._message_source(message)
-        candidates = self._extract_urls(source)
         session_id = self._session_id(message)
         sender_id = self._get_user_id(message)
         if self._is_download_confirmation(source):
@@ -257,6 +256,13 @@ class MultiPlatformParserPlugin(MaiBotPlugin):
             if choices:
                 await self._send_text(message, self._pending_choice_prompt(choices))
                 return {"action": "abort"} if self.config.parser.block_ai_reply else None
+
+        # 被回复/艾特 bot 的消息交给 AI 正常处理（联网搜索等），
+        # 仅显式下载意图（上面的确认逻辑）继续由本插件接管。
+        if self._is_bot_addressed(message):
+            return None
+
+        candidates = self._extract_urls(source)
         matched: tuple[BaseParser, str, Any, str] | None = None
         for url in candidates:
             for parser in self._parsers:
@@ -837,6 +843,31 @@ class MultiPlatformParserPlugin(MaiBotPlugin):
         group_info = message_info.get("group_info") if isinstance(message_info, dict) else None
         group_id = group_info.get("group_id") if isinstance(group_info, dict) else None
         return str(group_id) if group_id else None
+
+    @staticmethod
+    def _get_self_id(message: dict[str, Any]) -> str | None:
+        message_info = message.get("message_info", {})
+        additional_config = message_info.get("additional_config", {}) if isinstance(message_info, dict) else {}
+        self_id = additional_config.get("self_id") if isinstance(additional_config, dict) else None
+        return str(self_id) if self_id else None
+
+    def _is_bot_addressed(self, message: dict[str, Any]) -> bool:
+        """消息是否明确指向当前 bot：被 @ 或回复了 bot 的消息。"""
+        if message.get("is_at") or message.get("is_mentioned"):
+            return True
+        self_id = self._get_self_id(message)
+        if not self_id:
+            return False
+        for segment in message.get("raw_message") or []:
+            if not isinstance(segment, dict) or segment.get("type") != "reply":
+                continue
+            data = segment.get("data")
+            if not isinstance(data, dict):
+                continue
+            target_sender = str(data.get("target_message_sender_id") or "").strip()
+            if target_sender == self_id:
+                return True
+        return False
 
     @staticmethod
     def _get_user_id(message: dict[str, Any]) -> str | None:

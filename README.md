@@ -137,6 +137,7 @@ git clone git@github.com:Powdered-Delta/maibot-social-link-parser.git
 - 图集发送保留下载到的源文件；MaiBot 聊天记录整合只消费摘要和元数据，不参与原图再编码。
 - NapCat 与 MaiBot 分属不同容器时，`file://` 媒体路径必须对 NapCat 可见。生产环境需配置共享 volume 或保留现有可用的媒体路径方案。
 - B站的完整下载能力默认关闭，不与独立 B站视频插件争夺链接。
+- 回复或 @ 当前 bot 的消息交给 MaiBot 正常处理（联网搜索等），仅显式下载意图仍由本插件接管；避免对详情卡片的回复再次触发链接解析。
 
 ## 许可与署名
 
