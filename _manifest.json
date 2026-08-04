@@ -1,7 +1,7 @@
 {
   "manifest_version": 2,
   "id": "powdered-delta.maibot-social-link-parser",
-  "version": "0.1.17",
+  "version": "0.3.4",
   "name": "MaiBot 社媒聚合解析",
   "description": "解析抖音、小红书、小黑盒和可选 B站链接；默认先发送概览，待原发送者确认后下载原媒体。",
   "author": {

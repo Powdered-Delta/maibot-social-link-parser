@@ -173,7 +173,7 @@ class Downloader:
                 await safe_unlink(file_path)
                 await safe_unlink(part_path)
                 raise
-            except (ClientError, TimeoutError) as exc:
+            except (ClientError, TimeoutError, OSError) as exc:
                 if attempt < retries:
                     await sleep(2**attempt)
                     continue

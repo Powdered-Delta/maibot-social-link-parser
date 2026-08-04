@@ -1,14 +1,22 @@
 [plugin]
 name = "maibot_social_link_parser"
-config_version = "0.1.17"
-version = "0.1.17"
+config_version = "0.3.4"
+version = "0.3.4"
 enabled = true
 # Do not send to QQ/NapCat. Parsing and downloads still run for local validation.
 dry_run = false
 
 [parser]
-# Keep bilibili disabled while the standalone Bilibili plugin is enabled.
+# Add "bilibili" to enable B站 video and mini-program card parsing. Keep it disabled
+# while a standalone Bilibili plugin is enabled, otherwise both plugins may reply.
 enabled_platforms = ["douyin", "xhs", "xiaoheihe"]
+block_ai_reply = true
+download_mode = "confirm"
+send_preview_image = true
+
+[parser_advanced]
+# When disabled, all fields in this group are ignored and built-in defaults are used.
+enabled = false
 # Access control. Denylist wins when it overlaps the allowlist.
 group_whitelist = []
 group_blacklist = []
@@ -16,10 +24,9 @@ user_whitelist = []
 user_blacklist = []
 private_whitelist = []
 private_blacklist = []
-# Extra regex merged with the default intents (下载/帮我下载/发视频/保存).
+# Extra regex merged with the default exact command “下载”.
 # Leave empty to use the defaults only.
 download_intent_regex = ""
-block_ai_reply = true
 debounce_seconds = 120
 max_images = 9
 max_text_chars = 700
@@ -27,10 +34,15 @@ send_images = true
 send_video = true
 use_forward_for_multi = true
 gallery_delivery_mode = "default"
-download_mode = "confirm"
 pending_download_ttl_seconds = 600
 pending_download_selection = "latest"
-send_preview_image = true
+# Users in these groups, or listed below, may reply to another user's bot overview
+# and download its media. Leave both empty to require the original sender.
+cross_sender_download_access_mode = "whitelist"
+cross_sender_download_group_whitelist = []
+cross_sender_download_user_whitelist = []
+cross_sender_download_group_blacklist = []
+cross_sender_download_user_blacklist = []
 reaction_emoji_enabled = true
 reaction_emoji_id = 76
 source_max_size_mb = 80
@@ -38,6 +50,10 @@ source_max_minutes = 8
 
 [network]
 proxy = ""
+
+[network_advanced]
+# When disabled, all fields in this group are ignored and built-in defaults are used.
+enabled = false
 use_proxy_platforms = []
 common_timeout = 30
 download_timeout = 120

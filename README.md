@@ -26,6 +26,7 @@
 - [ ] 增加单元测试，覆盖小红书 `.cn` 短链、确认下载权限隔离、Range 续传和图集失败占位符。
 - [ ] 接入并修复 X/Twitter：优先使用现有 xdown 路径，补齐 `x.com`、`twitter.com`、`mobile.twitter.com` 识别；yt-dlp 作为可选后备。
 - [x] 增加可配置的下载意图正则、群聊/私聊/用户黑白名单，并保持默认确认下载策略。
+- [x] 恢复小程序卡片中的真实链接：NapCat 适配器把 B站等小程序卡片的内容链接（`qqdocurl`）从 `raw_message` 移入 `platform_card_payloads`，插件现在会从该负载中补回 URL，避免卡片分享消息不触发解析。
 
 ## 支持平台
 
@@ -63,7 +64,13 @@
   -> 下载完整媒体并发送图集/视频
 ```
 
-默认下载模式为 `confirm`。支持链接的发送者可在同一会话内回复“下载”“帮我下载”“发视频”或“保存”确认下载。其他用户、其他会话或过期确认不会消费该待下载任务。
+默认下载模式为 `confirm`。支持链接的发送者可在同一会话内单发或回复“下载”（也支持“下载 1”这类编号选择）确认下载。普通发言中包含“下载”字样不会触发；如需其他命令，启用高级配置后通过 `download_intent_regex` 显式追加。其他用户、其他会话或过期确认不会消费该待下载任务。
+
+发送“链接 + 下载”（任意先后顺序）会在解析成功后直接下载，不必等待概览卡片。回复 bot 的概览卡片并发送“下载”时，插件会按引用卡片中的链接定位待下载内容；引用他人内容不会回退下载自己的最新任务。
+
+默认只有原链接发送者能确认下载。跨用户下载可由 `parser_advanced.cross_sender_download_access_mode` 控制：`disabled` 始终仅原发送者，`whitelist` 仅群或用户白名单命中时允许，`blacklist` 则除群或用户黑名单命中外均允许。即使权限命中，仍必须回复 bot 的详情卡片并由其引用链接唯一命中待下载内容。
+
+同一详情卡片的媒体在发送成功后会标记为已发送；后续回复不会重复下载。下载进行中也会拒绝重复请求。若下载或发送失败，任务恢复为可确认状态，可再次回复“下载”重试。
 
 设置 `parser.download_mode = "automatic"` 可改为识别成功后自动下载，但不建议在生产群聊中默认启用。
 
@@ -94,22 +101,42 @@ git clone git@github.com:Powdered-Delta/maibot-social-link-parser.git
 | --- | --- | --- |
 | `plugin.enabled` | `true` | 是否启用插件 |
 | `plugin.dry_run` | `false` | 演练模式，不实际发送 QQ 消息 |
-| `parser.enabled_platforms` | 抖音、小红书、小黑盒 | WebUI 多选平台开关；B站默认关闭 |
-| `parser.download_mode` | `confirm` | `confirm` 为确认下载，`automatic` 为自动下载 |
-| `parser.gallery_delivery_mode` | `default` | 静态图集默认跟随 QQ 通道；WebSocket 经 MaiBot 合并转发发送，可设为 `http_forward` 使用 OneBot HTTP |
-| `parser.pending_download_ttl_seconds` | `600` | 等待用户确认下载的有效期，单位秒 |
-| `parser.pending_download_selection` | `latest` | 多条待下载内容时，`latest` 让“下载”选择最新一条；`number` 要求“下载 1”等明确编号 |
-| `parser.send_preview_image` | `true` | 概览是否发送视频封面或图集首图 |
-| `parser.reaction_emoji_enabled` | `true` | 识别链接后是否添加 QQ 表情回应 |
-| `parser.group_whitelist` | `[]` | 仅这些群自动解析；留空表示所有群 |
-| `parser.group_blacklist` | `[]` | 这些群不自动解析；与白名单重叠时黑名单优先 |
-| `parser.user_whitelist` | `[]` | 仅这些用户的链接会解析（群聊与私聊均生效）；留空表示所有用户 |
-| `parser.user_blacklist` | `[]` | 这些用户的链接不解析；与白名单重叠时黑名单优先 |
-| `parser.private_whitelist` | `[]` | 仅这些用户的私聊链接会解析；留空表示允许所有私聊 |
-| `parser.private_blacklist` | `[]` | 这些用户的私聊链接不解析 |
-| `parser.download_intent_regex` | `""` | 追加的下载确认意图正则，与默认“下载/帮我下载/发视频/保存”取并集，同时支持“下载 1”编号选择；留空仅用默认 |
+| `parser.enabled_platforms` | 抖音、小红书、小黑盒 | WebUI 多选平台开关；B站默认关闭，需加入 `bilibili` 才会解析 `b23.tv` 和 B站小程序卡片 |
 | `parser.block_ai_reply` | `true` | 命中链接后是否中止 MaiBot 普通聊天流程 |
-| `network.download_retry_times` | `3` | 媒体下载重试次数 |
+| `parser.download_mode` | `confirm` | `confirm` 为确认下载，`automatic` 为自动下载 |
+| `parser.send_preview_image` | `true` | 概览是否发送视频封面或图集首图 |
+| `parser_advanced.enabled` | `false` | 高级解析开关；关闭时忽略本分组全部字段并使用内置默认值 |
+| `parser_advanced.gallery_delivery_mode` | `default` | 静态图集默认跟随 QQ 通道；WebSocket 经 MaiBot 合并转发发送，可设为 `http_forward` 使用 OneBot HTTP |
+| `parser_advanced.pending_download_ttl_seconds` | `600` | 等待用户确认下载的有效期，单位秒 |
+| `parser_advanced.pending_download_selection` | `latest` | 回复 bot 概览卡片时优先按引用链接精确选择；非回复的“下载”在 `latest` 下选最新一条，`number` 要求“下载 1”等明确编号 |
+| `parser_advanced.cross_sender_download_group_whitelist` | `[]` | 这些群内允许用户回复详情卡片下载其他发送者的媒体；留空保持原发送者权限隔离 |
+| `parser_advanced.cross_sender_download_user_whitelist` | `[]` | 这些用户可回复详情卡片下载其他发送者的媒体；留空不按用户放宽权限 |
+| `parser_advanced.cross_sender_download_access_mode` | `whitelist` | 跨用户下载授权模式：`disabled`、`whitelist` 或 `blacklist` |
+| `parser_advanced.cross_sender_download_group_blacklist` | `[]` | 黑名单模式下，禁止跨用户下载的群 |
+| `parser_advanced.cross_sender_download_user_blacklist` | `[]` | 黑名单模式下，禁止跨用户下载的用户 |
+| `parser_advanced.reaction_emoji_enabled` | `true` | 识别链接后是否添加 QQ 表情回应 |
+| `parser_advanced.group_whitelist` | `[]` | 仅这些群自动解析；留空表示所有群 |
+| `parser_advanced.group_blacklist` | `[]` | 这些群不自动解析；与白名单重叠时黑名单优先 |
+| `parser_advanced.user_whitelist` | `[]` | 仅这些用户的链接会解析（群聊与私聊均生效）；留空表示所有用户 |
+| `parser_advanced.user_blacklist` | `[]` | 这些用户的链接不解析；与白名单重叠时黑名单优先 |
+| `parser_advanced.private_whitelist` | `[]` | 仅这些用户的私聊链接会解析；留空表示允许所有私聊 |
+| `parser_advanced.private_blacklist` | `[]` | 这些用户的私聊链接不解析 |
+| `parser_advanced.download_intent_regex` | `""` | 追加的独立下载确认命令正则，与默认“下载”取并集，同时支持“下载 1”编号选择；留空仅用默认 |
+| `parser_advanced.debounce_seconds` | `120` | 同一会话内重复链接的忽略时长，单位秒；`0` 禁用去重 |
+| `parser_advanced.max_images` | `9` | 单条链接最多发送的图片数 |
+| `parser_advanced.max_text_chars` | `700` | 摘要正文最大字符数 |
+| `parser_advanced.send_images` | `true` | 是否发送图集与图片媒体 |
+| `parser_advanced.send_video` | `true` | 是否在确认下载后回传视频 |
+| `parser_advanced.use_forward_for_multi` | `true` | 静态图集和图文是否使用合并转发 |
+| `parser_advanced.reaction_emoji_id` | `76` | QQ 表情回应 ID |
+| `parser_advanced.source_max_size_mb` | `80` | 单个媒体最大下载大小，单位 MB |
+| `parser_advanced.source_max_minutes` | `8` | 视频最大时长，单位分钟 |
+| `network.proxy` | `""` | 解析/下载代理 |
+| `network_advanced.enabled` | `false` | 高级网络开关；关闭时忽略本分组全部字段并使用内置默认值 |
+| `network_advanced.use_proxy_platforms` | `[]` | 仅选中的平台通过上方代理访问 |
+| `network_advanced.common_timeout` | `30` | 解析请求超时，单位秒 |
+| `network_advanced.download_timeout` | `120` | 媒体下载超时，单位秒 |
+| `network_advanced.download_retry_times` | `3` | 媒体下载重试次数 |
 | `delivery.delivery_mode` | `websocket` | 默认经 MaiBot 的 NapCat WebSocket 网关发送；可改为 `http` 使用兼容直连 |
 | `api.host`、`api.port`、`api.token` | - | 仅 `delivery.delivery_mode = "http"` 时使用的 NapCat OneBot HTTP 配置 |
 
@@ -137,7 +164,16 @@ git clone git@github.com:Powdered-Delta/maibot-social-link-parser.git
 - 图集发送保留下载到的源文件；MaiBot 聊天记录整合只消费摘要和元数据，不参与原图再编码。
 - NapCat 与 MaiBot 分属不同容器时，`file://` 媒体路径必须对 NapCat 可见。生产环境需配置共享 volume 或保留现有可用的媒体路径方案。
 - B站的完整下载能力默认关闭，不与独立 B站视频插件争夺链接。
+- B站小程序卡片依赖 NapCat 适配器透传 `message_info.additional_config.platform_card_payloads`。本插件会从其中的 `qqdocurl` 恢复真实链接；若日志仍未出现 B站链接候选，请先确认适配器版本和该字段是否存在。
 - 回复或 @ 当前 bot 的消息交给 MaiBot 正常处理（联网搜索等），仅显式下载意图仍由本插件接管；避免对详情卡片的回复再次触发链接解析。
+
+## 更新历史
+
+- `0.3.4`：仅独立的“下载”或“下载 序号”命令会确认下载，普通发言或回复内容中包含“下载”不会触发；任意回复消息不再作为新的链接分享重新解析。跨用户下载授权支持禁用、白名单和黑名单模式；详情卡片的媒体发送成功后标记为已发送，下载中或已发送时拒绝重复请求，失败后允许再次确认；统一媒体下载额外重试次数默认值为 3。
+- `0.3.2`：支持“链接 + 下载”直接下载；回复详情卡片时按引用链接精确选择待下载任务，避免跨用户误下载最新内容；可通过跨用户下载群/用户白名单授权其他人下载；补充 B站小程序卡片的顶层负载兼容与未启用 B站解析器的诊断日志。
+- `0.3.0`：修复 B站等小程序卡片分享不触发解析（从 `platform_card_payloads` 补回 `qqdocurl` 真实链接）；配置拆分出 `parser_advanced` 与 `network_advanced` 两个独立高级分组，每分组带独立开关，关闭时忽略该组全部字段并使用内置默认值；新增入口检查单元测试。
+- `0.2.0`：增加可配置的下载意图正则、群聊/私聊/用户黑白名单。
+- `0.1.x`：确认下载状态机、封面预览、QQ 表情回应、演练模式、下载续传、图集失败占位符等。
 
 ## 许可与署名
 

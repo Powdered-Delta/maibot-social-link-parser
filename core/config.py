@@ -42,7 +42,7 @@ class PluginConfig:
         source_max_minute: int = 8,
         debounce_interval: int = 120,
         download_timeout: int = 120,
-        download_retry_times: int = 1,
+        download_retry_times: int = 3,
         common_timeout: int = 30,
         bilibili_cookies: str = "",
         bilibili_video_codecs: str = "AVC",
