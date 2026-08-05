@@ -109,7 +109,15 @@ MaiBot 官方镜像**不保证内置 ffmpeg**：其 Dockerfile 未安装 ffmpeg�
 
 确认容器内是否有 ffmpeg：`docker exec <core容器名> which ffmpeg`。
 
-正确修复是**在 MaiBot 使用的 Docker 镜像中预装 ffmpeg 并重建容器**，不要在运行中的容器内临时安装（重建即丢失）。可基于官方镜像做派生镜像：
+**临时应急**（仅当前容器有效，重建即丢失）：直接进入运行中的容器安装：
+
+```bash
+docker exec -it <core容器名> bash -c "apt-get update && apt-get install -y --no-install-recommends ffmpeg"
+```
+
+装完立刻生效，可先恢复 B站下载；但容器一旦重建该安装就会消失，仍需按下面的方案做永久修复。
+
+**永久修复**是**在 MaiBot 使用的 Docker 镜像中预装 ffmpeg 并重建容器**，不要在运行中的容器内临时安装（重建即丢失）。可基于官方镜像做派生镜像：
 
 ```dockerfile
 FROM sengokucola/maibot:latest
