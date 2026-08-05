@@ -695,7 +695,8 @@ class MultiPlatformParserPlugin(MaiBotPlugin):
         return contents
 
     def _message_source(self, message: dict[str, Any], *, include_reply: bool = True) -> str:
-        parts = [str(message.get("processed_plain_text", "") or "")]
+        base = self._strip_mention_noise(str(message.get("processed_plain_text", "") or ""), message)
+        parts = [base]
         for seg in message.get("raw_message", []) or []:
             if not isinstance(seg, dict):
                 continue
@@ -704,6 +705,37 @@ class MultiPlatformParserPlugin(MaiBotPlugin):
             parts.extend(self._urls_from_payload(seg))
         parts.extend(self._urls_from_card_payloads(message))
         return "\n".join(parts)
+
+    @staticmethod
+    def _mention_noise(message: dict[str, Any]) -> list[str]:
+        """收集消息中的回复占位与 @提及 占位文本。
+
+        引用回复时 QQ 会自动 @ bot 的群名片，适配器把 reply 段渲染为
+        ``[reply]``、at 段渲染为 ``@群名片`` 拼进纯文本，需在命令识别前剔除。
+        """
+        noise = ["[reply]"]
+        for seg in message.get("raw_message", []) or []:
+            if not isinstance(seg, dict) or seg.get("type") != "at":
+                continue
+            data = seg.get("data")
+            if not isinstance(data, dict):
+                continue
+            name = str(
+                data.get("target_user_cardname")
+                or data.get("target_user_nickname")
+                or data.get("target_user_id")
+                or ""
+            ).strip()
+            if name:
+                noise.append(f"@{name}")
+        return noise
+
+    @classmethod
+    def _strip_mention_noise(cls, text: str, message: dict[str, Any]) -> str:
+        """剔除消息中的回复占位与 @提及 文本，避免污染下载命令识别。"""
+        for token in cls._mention_noise(message):
+            text = text.replace(token, "")
+        return text.strip()
 
     @staticmethod
     def _card_payloads(message: dict[str, Any]) -> list[Any]:
@@ -1088,8 +1120,13 @@ class MultiPlatformParserPlugin(MaiBotPlugin):
         return str(self_id) if self_id else None
 
     def _is_bot_addressed(self, message: dict[str, Any]) -> bool:
-        """消息是否明确指向当前 bot：被 @ 或回复了 bot 的消息。"""
-        if message.get("is_at") or message.get("is_mentioned"):
+        """消息是否明确指向当前 bot。
+
+        以 ``is_mentioned`` 为标准：引用回复 bot 时 QQ 会自动 @ bot 群名片，
+        适配器据此置位；``is_at`` 是其兼容别名。其他适配器再回退到回复目标
+        发送者判断。
+        """
+        if message.get("is_mentioned") or message.get("is_at"):
             return True
         self_id = self._get_self_id(message)
         if not self_id:

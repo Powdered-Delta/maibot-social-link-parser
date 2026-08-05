@@ -172,6 +172,35 @@ def reply_download_message(target_url: str, *, user_id: str = "10001") -> dict[s
     return message
 
 
+def reply_download_with_at_message(target_url: str, *, user_id: str = "10001") -> dict[str, Any]:
+    """引用回复 bot 概览，客户端自动附带 @bot 群名片 的消息。
+
+    对齐 MaiBot-Napcat-Adapter：reply 段渲染为 ``[reply]``，at 段渲染为
+    ``@群名片``，与用户文本拼接进 ``processed_plain_text``；@到 bot 时
+    ``is_mentioned`` 置位。
+    """
+    message = with_user(with_group(base_message()), user_id)
+    message["is_mentioned"] = True
+    message["is_at"] = True
+    message["raw_message"] = [
+        {
+            "type": "reply",
+            "data": {
+                "target_message_id": "bot-overview",
+                "target_message_content": f"标题\n链接：{target_url}\n回复“下载”获取原媒体。",
+                "target_message_sender_id": "12345",
+            },
+        },
+        {
+            "type": "at",
+            "data": {"target_user_id": "12345", "target_user_cardname": "bot群名片"},
+        },
+        {"type": "text", "data": "下载"},
+    ]
+    message["processed_plain_text"] = "[reply]@bot群名片下载"
+    return message
+
+
 def at_bot_message() -> dict[str, Any]:
     message = with_group(base_message())
     message["is_at"] = True

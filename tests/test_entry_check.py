@@ -18,7 +18,7 @@ from . import entry_check_data as data
 
 def make_plugin() -> MultiPlatformParserPlugin:
     plugin = MultiPlatformParserPlugin()
-    plugin.set_plugin_config({"plugin": {"enabled": True, "config_version": "0.3.5"}})
+    plugin.set_plugin_config({"plugin": {"enabled": True, "config_version": "0.3.6"}})
     assert isinstance(plugin.config, PluginConfig)
     return plugin
 
@@ -431,6 +431,23 @@ class TestPendingDownloadReply:
         assert pending is None and not choices and queue_size == 0
         assert error == "该详情卡片的媒体正在下载，请勿重复请求。"
 
+    def test_reply_with_auto_at_strips_mention_and_consumes(self) -> None:
+        plugin = make_plugin()
+        message = data.reply_download_with_at_message("https://v.douyin.com/video-a", user_id="10001")
+        key = (plugin._session_id(message), "10001")
+        item = self.pending("https://v.douyin.com/video-a", "视频 A")
+        plugin._pending_downloads[key] = [item]
+
+        own_source = plugin._message_source(message, include_reply=False)
+        assert "[reply]" not in own_source
+        assert "@bot群名片" not in own_source
+        assert own_source == "下载"
+        assert plugin._has_download_command(own_source)
+
+        pending, choices, queue_size, error = plugin._consume_pending_download(message, own_source)
+        assert pending is item
+        assert not choices and queue_size == 1 and error is None
+
 
 class TestBotAddressed:
     def test_at_bot(self) -> None:
@@ -448,6 +465,18 @@ class TestBotAddressed:
     def test_plain_chat(self) -> None:
         plugin = make_plugin()
         assert not plugin._is_bot_addressed(data.plain_chat_message())
+
+    def test_reply_auto_at_marks_bot_addressed_via_is_mentioned(self) -> None:
+        plugin = make_plugin()
+        message = data.reply_download_with_at_message("https://v.douyin.com/video-a")
+        assert message.get("is_mentioned") is True
+        assert plugin._is_bot_addressed(message)
+
+    def test_plain_chat_not_mentioned_not_bot_addressed(self) -> None:
+        plugin = make_plugin()
+        message = data.with_text(data.with_group(data.base_message()), "下载")
+        assert message.get("is_mentioned") is not True
+        assert not plugin._is_bot_addressed(message)
 
 
 class TestReplyParsingGuard:
