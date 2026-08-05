@@ -732,9 +732,14 @@ class MultiPlatformParserPlugin(MaiBotPlugin):
 
     @classmethod
     def _strip_mention_noise(cls, text: str, message: dict[str, Any]) -> str:
-        """剔除消息中的回复占位与 @提及 文本，避免污染下载命令识别。"""
+        """剔除消息中的回复占位与 @提及 文本，避免污染下载命令识别。
+
+        先按结构化 ``at`` 段剔除其渲染文本；再兜底剔除开头位置的
+        ``@群名片``（旧版或第三方适配器可能把自动 @ 拼成纯文本，无对应 at 段）。
+        """
         for token in cls._mention_noise(message):
             text = text.replace(token, "")
+        text = re.sub(r"^\s*@\S+(?:\s+@\S+)*\s*", "", text)
         return text.strip()
 
     @staticmethod

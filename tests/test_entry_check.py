@@ -448,6 +448,21 @@ class TestPendingDownloadReply:
         assert pending is item
         assert not choices and queue_size == 1 and error is None
 
+    def test_reply_with_literal_at_text_still_detects_download(self) -> None:
+        plugin = make_plugin()
+        message = data.reply_download_at_as_literal_text_message("https://v.douyin.com/video-a", user_id="10001")
+        key = (plugin._session_id(message), "10001")
+        item = self.pending("https://v.douyin.com/video-a", "视频 A")
+        plugin._pending_downloads[key] = [item]
+
+        own_source = plugin._message_source(message, include_reply=False)
+        assert own_source == "下载"
+        assert plugin._has_download_command(own_source)
+
+        pending, choices, queue_size, error = plugin._consume_pending_download(message, own_source)
+        assert pending is item
+        assert not choices and queue_size == 1 and error is None
+
 
 class TestBotAddressed:
     def test_at_bot(self) -> None:

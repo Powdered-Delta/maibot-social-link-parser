@@ -201,6 +201,32 @@ def reply_download_with_at_message(target_url: str, *, user_id: str = "10001") -
     return message
 
 
+def reply_download_at_as_literal_text_message(
+    target_url: str, *, user_id: str = "10001"
+) -> dict[str, Any]:
+    """引用回复 bot 概览，自动 @ 群名片以纯文本拼入（无结构化 at 段）。
+
+    对应生产日志所见：``... @ai-黄老邪大王  下载``，其中回复占位与
+    ``@群名片`` 都在 ``processed_plain_text`` 里，raw_message 只有 reply 与 text 段。
+    """
+    message = with_user(with_group(base_message()), user_id)
+    message["is_mentioned"] = True
+    message["is_at"] = True
+    message["raw_message"] = [
+        {
+            "type": "reply",
+            "data": {
+                "target_message_id": "bot-overview",
+                "target_message_content": f"标题\n链接：{target_url}\n回复“下载”获取原媒体。",
+                "target_message_sender_id": "12345",
+            },
+        },
+        {"type": "text", "data": "@bot群名片  下载"},
+    ]
+    message["processed_plain_text"] = "[reply]@bot群名片  下载"
+    return message
+
+
 def at_bot_message() -> dict[str, Any]:
     message = with_group(base_message())
     message["is_at"] = True
