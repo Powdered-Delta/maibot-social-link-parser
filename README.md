@@ -101,6 +101,29 @@ git clone git@github.com:Powdered-Delta/maibot-social-link-parser.git
 
 不要提交 `config.toml`、Cookie、下载缓存、媒体文件或 OneBot Token。
 
+### 运行依赖：需要 ffmpeg
+
+媒体下载依赖 MaiBot Runner（容器）中存在 `ffmpeg`。抖音/小红书/小黑盒经 yt-dlp 通常直接拿到单文件 mp4，不触发 ffmpeg；但 **B站视频是 DASH 分离流，合并音视频必然调用 `ffmpeg`**，源端只提供分离流或非 mp4 格式时同样需要。
+
+MaiBot 官方镜像**不保证内置 ffmpeg**：其 Dockerfile 未安装 ffmpeg，Playwright `install-deps chromium` 的依赖列表也不含 ffmpeg；`sengokucola/maibot:latest` 与基础镜像 `python:3.13-slim` 都是浮动标签，重建镜像后容器里的 ffmpeg 可能来去变化。同一套部署在镜像/容器重建后开始报“媒体需要 FFmpeg 合并音视频”通常就是这个原因，与插件版本无关。
+
+确认容器内是否有 ffmpeg：`docker exec <core容器名> which ffmpeg`。
+
+正确修复是**在 MaiBot 使用的 Docker 镜像中预装 ffmpeg 并重建容器**，不要在运行中的容器内临时安装（重建即丢失）。可基于官方镜像做派生镜像：
+
+```dockerfile
+FROM sengokucola/maibot:latest
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ffmpeg \
+    && rm -rf /var/lib/apt/lists/*
+```
+
+```bash
+docker build -t maibot-ffmpeg .
+```
+
+compose 中把 `core.image` 指向 `maibot-ffmpeg` 后重建即可。
+
 ## 配置
 
 `config.example.toml` 提供了配置参考。常用字段如下：
