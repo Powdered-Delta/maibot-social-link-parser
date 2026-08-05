@@ -13,6 +13,7 @@ from tqdm.asyncio import tqdm
 
 from astrbot.api import logger
 
+from . import ffmpeg
 from .config import PluginConfig
 from .constants import COMMON_HEADER
 from .exception import (
@@ -39,6 +40,12 @@ def set_download_progress_callback(callback: DownloadProgressCallback | None) ->
 
 def reset_download_progress_callback(token: Token[DownloadProgressCallback | None]) -> None:
     _download_progress_callback.reset(token)
+
+
+def _ffmpeg_location() -> str | None:
+    """yt-dlp 的 ffmpeg_location：指向自举 ffmpeg 所在目录，便于其发现 ffmpeg。"""
+    path = ffmpeg.configured_ffmpeg()
+    return str(path.parent) if path else None
 
 
 def auto_task(func: Callable[P, Coroutine[Any, Any, T]]) -> Callable[P, Task[T]]:
@@ -384,6 +391,8 @@ class Downloader:
             ],
             "http_headers": headers or self.default_headers,
         }
+        if (location := _ffmpeg_location()):
+            opts["ffmpeg_location"] = location
         if proxy:
             opts["proxy"] = proxy
         if cookiefile and cookiefile.is_file():
@@ -422,6 +431,8 @@ class Downloader:
             "quiet": True,
             "no_warnings": True,
         }
+        if (location := _ffmpeg_location()):
+            opts["ffmpeg_location"] = location
         if not opts["format"]:
             opts.pop("format")
         if proxy:
@@ -469,6 +480,8 @@ class Downloader:
             "cookiefile": None,
             "http_headers": headers or self.default_headers,
         }
+        if (location := _ffmpeg_location()):
+            opts["ffmpeg_location"] = location
         if proxy:
             opts["proxy"] = proxy
         if cookiefile and cookiefile.is_file():

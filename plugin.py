@@ -19,6 +19,7 @@ PLUGIN_DIR = Path(__file__).resolve().parent
 if str(PLUGIN_DIR) not in sys.path:
     sys.path.insert(0, str(PLUGIN_DIR))
 
+from .core import ffmpeg
 from .core.config import PluginConfig as CorePluginConfig
 from .core.data import DynamicContent, GraphicsContent, ImageContent, ParseResult, TextContent, VideoContent
 from .core.download import Downloader, reset_download_progress_callback, set_download_progress_callback
@@ -204,6 +205,15 @@ class ApiConfig(PluginConfigBase):
     bot_uin: str = Field(default="", description="合并转发 Bot QQ", json_schema_extra=_ui("合并转发 Bot QQ", "仅 HTTP 通道使用。群合并转发节点显示的发送者 QQ 号；建议填写当前 NapCat 登录的机器人 QQ。", 4, label_en="Forward-message bot QQ", hint_en="Used only by HTTP delivery. QQ number displayed as the sender of group-forward nodes; use the account logged into NapCat.", label_ja="結合転送の Bot QQ", hint_ja="HTTP 配信時のみ使用します。グループ結合転送ノードの送信者として表示する QQ 番号です。NapCat にログインしている Bot QQ を使用します。", placeholder="123456789"))
 
 
+class FfmpegSectionConfig(PluginConfigBase):
+    __ui_label__: ClassVar[str] = "FFmpeg 自举"
+    __ui_icon__: ClassVar[str] = "download"
+    __ui_order__: ClassVar[int] = 8
+
+    enabled: bool = Field(default=True, description="允许插件自动获取 ffmpeg", json_schema_extra=_ui("允许插件自动获取 ffmpeg", "首次需要时，插件会把静态 ffmpeg 下载到数据目录并优先使用；容器重建后仍在。关闭后仅使用系统已安装的 ffmpeg。", 0, label_en="Let the plugin fetch ffmpeg", hint_en="On first use the plugin downloads a static ffmpeg into its data directory and prefers it. It survives container rebuilds. When off, only a system ffmpeg is used.", label_ja="プラグインに ffmpeg を取得させる", hint_ja="初回利用時に静的 ffmpeg をプラグインのデータディレクトリへダウンロードして優先使用します。コンテナ再構築後も維持されます。無効時はシステムの ffmpeg のみ使用します。"))
+    download_url: str = Field(default="", description="自定义 ffmpeg 下载地址", json_schema_extra=_ui("自定义 ffmpeg 下载地址", "留空按平台自动选择 BtbN 静态构建；仅在需要镜像或替换源时填写 tar.xz/zip 归档地址。", 1, label_en="Custom ffmpeg download URL", hint_en="Leave empty to auto-pick a BtbN static build for the platform. Fill a tar.xz/zip archive URL only to mirror or replace the source.", label_ja="カスタム ffmpeg ダウンロード URL", hint_ja="空欄ではプラットフォームに応じて BtbN の静的ビルドを自動選択します。ミラーや代替ソースを使う場合のみ tar.xz/zip のアーカイブ URL を指定します。", placeholder="https://example.com/ffmpeg.tar.xz"))
+
+
 class PluginConfig(PluginConfigBase):
     plugin: PluginSectionConfig = Field(default_factory=PluginSectionConfig)
     parser: ParserSectionConfig = Field(default_factory=ParserSectionConfig)
@@ -213,6 +223,7 @@ class PluginConfig(PluginConfigBase):
     cookies: CookieSectionConfig = Field(default_factory=CookieSectionConfig)
     delivery: DeliveryConfig = Field(default_factory=DeliveryConfig)
     api: ApiConfig = Field(default_factory=ApiConfig)
+    ffmpeg: FfmpegSectionConfig = Field(default_factory=FfmpegSectionConfig)
 
 
 @dataclass(slots=True)
@@ -248,7 +259,18 @@ class MultiPlatformParserPlugin(MaiBotPlugin):
             self.ctx.logger.info("Multi platform parser disabled")
             return
         core_cfg = self._build_core_config()
+        ffmpeg.set_configured_ffmpeg(ffmpeg.local_binary(core_cfg.data_dir))
         self._downloader = Downloader(core_cfg)
+
+        if self.config.ffmpeg.enabled:
+            self._create_task(
+                ffmpeg.ensure_ffmpeg(
+                    core_cfg.data_dir,
+                    enabled=True,
+                    download_url=self.config.ffmpeg.download_url,
+                ),
+                "link_resolver.ffmpeg_bootstrap",
+            )
 
         enabled = set(core_cfg.parser.enabled_platforms())
         self._parsers = [
@@ -1046,8 +1068,8 @@ class MultiPlatformParserPlugin(MaiBotPlugin):
         detail = str(exc)
         if "ffmpeg" in detail.lower() and ("未安装" in detail or "not found" in detail.lower()):
             return (
-                "媒体需要 FFmpeg 合并音视频，但 MaiBot Runner 未安装 FFmpeg。\n"
-                "请在 MaiBot 使用的 Docker 镜像中预装 ffmpeg 并重建容器；不要只在运行中的容器内临时安装。"
+                "媒体需要 FFmpeg 合并音视频，但当前没有可用的 FFmpeg，插件自动获取也未成功。\n"
+                "可在插件数据目录放置静态 ffmpeg，或在 MaiBot 使用的 Docker 镜像中预装 ffmpeg 后重建容器。"
             )
         return "媒体下载失败，请稍后重试。"
 

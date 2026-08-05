@@ -8,6 +8,8 @@ from urllib.parse import urlparse
 
 from astrbot.api import logger
 
+from . import ffmpeg
+
 K = TypeVar("K")
 V = TypeVar("V")
 
@@ -43,6 +45,8 @@ async def exec_ffmpeg_cmd(cmd: list[str]) -> None:
     Args:
         cmd (list[str]): 命令序列
     """
+    if cmd and cmd[0] == "ffmpeg":
+        cmd = [ffmpeg.executable(), *cmd[1:]]
     try:
         process = await asyncio.create_subprocess_exec(
             *cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE

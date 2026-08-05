@@ -103,21 +103,15 @@ git clone git@github.com:Powdered-Delta/maibot-social-link-parser.git
 
 ### 运行依赖：需要 ffmpeg
 
-媒体下载依赖 MaiBot Runner（容器）中存在 `ffmpeg`。抖音/小红书/小黑盒经 yt-dlp 通常直接拿到单文件 mp4，不触发 ffmpeg；但 **B站视频是 DASH 分离流，合并音视频必然调用 `ffmpeg`**，源端只提供分离流或非 mp4 格式时同样需要。
+媒体下载依赖 `ffmpeg`。抖音/小红书/小黑盒经 yt-dlp 通常直接拿到单文件 mp4，不触发 ffmpeg；但 **B站视频是 DASH 分离流，合并音视频必然调用 `ffmpeg`**，源端只提供分离流或非 mp4 格式时同样需要。
 
 MaiBot 官方镜像**不保证内置 ffmpeg**：其 Dockerfile 未安装 ffmpeg，Playwright `install-deps chromium` 的依赖列表也不含 ffmpeg；`sengokucola/maibot:latest` 与基础镜像 `python:3.13-slim` 都是浮动标签，重建镜像后容器里的 ffmpeg 可能来去变化。同一套部署在镜像/容器重建后开始报“媒体需要 FFmpeg 合并音视频”通常就是这个原因，与插件版本无关。
 
-确认容器内是否有 ffmpeg：`docker exec <core容器名> which ffmpeg`。
+**插件默认自举 ffmpeg**：`ffmpeg.enabled = true`（默认）时，首次需要 ffmpeg 会把静态构建下载到插件数据目录 `<数据目录>/ffmpeg/` 并优先使用（yt-dlp 的 `ffmpeg_location` 也指向它），容器重建后仍在，不依赖镜像。下载源按平台自动选择 BtbN 的 GPL 静态构建（Linux x86_64/arm64、Windows x64/arm64）；可在 `ffmpeg.download_url` 填写自定义 tar.xz/zip 归档地址以镜像或替换源。自举失败仅告警，不会阻断插件启动。
 
-**临时应急**（仅当前容器有效，重建即丢失）：直接进入运行中的容器安装：
+确认容器内是否有 ffmpeg：`docker exec <core容器名> which ffmpeg`。若自举失败，可手动把静态 ffmpeg 放到 `<数据目录>/ffmpeg/ffmpeg`（Windows 为 `ffmpeg.exe`）并赋予可执行权限，插件启动后会直接使用。
 
-```bash
-docker exec -it <core容器名> bash -c "apt-get update && apt-get install -y --no-install-recommends ffmpeg"
-```
-
-装完立刻生效，可先恢复 B站下载；但容器一旦重建该安装就会消失，仍需按下面的方案做永久修复。
-
-**永久修复**是**在 MaiBot 使用的 Docker 镜像中预装 ffmpeg 并重建容器**，不要在运行中的容器内临时安装（重建即丢失）。可基于官方镜像做派生镜像：
+**镜像内预装 ffmpeg**（可选，替代自举）：在 MaiBot 使用的 Docker 镜像中预装 ffmpeg 并重建容器。可基于官方镜像做派生镜像：
 
 ```dockerfile
 FROM sengokucola/maibot:latest
@@ -178,6 +172,8 @@ compose 中把 `core.image` 指向 `maibot-ffmpeg` 后重建即可。
 | `network_advanced.download_retry_times` | `3` | 媒体下载重试次数 |
 | `delivery.delivery_mode` | `websocket` | 默认经 MaiBot 的 NapCat WebSocket 网关发送；可改为 `http` 使用兼容直连 |
 | `api.host`、`api.port`、`api.token` | - | 仅 `delivery.delivery_mode = "http"` 时使用的 NapCat OneBot HTTP 配置 |
+| `ffmpeg.enabled` | `true` | 允许插件自动下载静态 ffmpeg 到数据目录并优先使用；关闭后仅用系统 ffmpeg |
+| `ffmpeg.download_url` | `""` | 自定义 ffmpeg 归档地址；留空按平台自动选择 BtbN 静态构建 |
 
 默认通过 MaiBot 已启用的 NapCat WebSocket 网关发送，配置页的“HTTP 兼容后备”分组无需填写。静态图集或图文会经 `send.forward` 作为合并转发发送，图片以 Base64 传给 Host，不依赖 NapCat 读取 MaiBot 的本地媒体路径。选择 HTTP 兼容模式时，才需要让 `api.host`、`api.port`、`api.token` 指向 MaiBot 容器可访问的 NapCat OneBot HTTP 服务。
 
@@ -209,6 +205,7 @@ compose 中把 `core.image` 指向 `maibot-ffmpeg` 后重建即可。
 
 ## 更新历史
 
+- `0.3.8`：插件自举 ffmpeg。B站等 DASH 分离流合并音视频必走 ffmpeg，而 MaiBot 官方镜像不保证内置；现默认在首次需要时把静态 ffmpeg 下载到插件数据目录并优先使用（yt-dlp `ffmpeg_location` 同步指向），容器重建后仍在，不依赖镜像。新增 `ffmpeg.enabled` 与 `ffmpeg.download_url` 配置，可按平台自动选择 BtbN 静态构建或自定义归档地址；自举失败仅告警不阻断启动，`exec_ffmpeg_cmd` 未配置时仍回退 PATH 查找。
 - `0.3.7`：修复引用 bot 概览卡片后回复“下载”未被接管的问题。MaiBot 会把 reply 组件的 `target_message_content` 整块内联进 `processed_plain_text`，导致概览内的链接被 `direct_download` 误判。现按引用原文预览精确剔除，引用回复“下载”恢复为对既有待下载任务的确认。
 - `0.3.6`：以 `is_mentioned` 为标准判定 bot 寻址；命令识别前剔除引用回复自动附带的 `[reply]` 与 `@bot 群名片` 占位文本，使引用回复“下载”在 QQ 自动 @ 群名片时仍被准确接管。
 - `0.3.5`：明确并实现权限边界：全局用户黑白名单限制链接原发送者，也默认限制代触发者；群聊中他人下载必须引用 Bot 详情卡片，只有显式代触发白名单可豁免请求者的全局用户限制。

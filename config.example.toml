@@ -1,7 +1,7 @@
 [plugin]
 name = "maibot_social_link_parser"
-config_version = "0.3.7"
-version = "0.3.7"
+config_version = "0.3.8"
+version = "0.3.8"
 enabled = true
 # Do not send to QQ/NapCat. Parsing and downloads still run for local validation.
 dry_run = false
@@ -78,3 +78,11 @@ host = "127.0.0.1"
 port = 3000
 token = ""
 bot_uin = ""
+
+[ffmpeg]
+# B站等 DASH 视频合并音视频时需要 ffmpeg。开启后插件会在首次需要时自动下载
+# 静态 ffmpeg 到插件数据目录并优先使用；关闭后仅使用系统已安装的 ffmpeg。
+enabled = true
+# Leave empty to auto-pick a BtbN static build for the current platform.
+# Fill a tar.xz/zip archive URL only to mirror or replace the source.
+download_url = ""
