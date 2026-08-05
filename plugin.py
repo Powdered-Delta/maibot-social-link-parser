@@ -695,7 +695,8 @@ class MultiPlatformParserPlugin(MaiBotPlugin):
         return contents
 
     def _message_source(self, message: dict[str, Any], *, include_reply: bool = True) -> str:
-        base = self._strip_mention_noise(str(message.get("processed_plain_text", "") or ""), message)
+        base = str(message.get("processed_plain_text", "") or "")
+        base = self._strip_mention_noise(self._strip_quoted_reply_text(base, message), message)
         parts = [base]
         for seg in message.get("raw_message", []) or []:
             if not isinstance(seg, dict):
@@ -705,6 +706,26 @@ class MultiPlatformParserPlugin(MaiBotPlugin):
             parts.extend(self._urls_from_payload(seg))
         parts.extend(self._urls_from_card_payloads(message))
         return "\n".join(parts)
+
+    @staticmethod
+    def _strip_quoted_reply_text(text: str, message: dict[str, Any]) -> str:
+        """剔除纯文本中内联的引用回复原文预览。
+
+        MaiBot 把 reply 组件渲染为目标消息的完整预览（``target_message_content``），
+        引用 bot 概览卡片时整块文本（含链接、``[image]`` 与下载提示）会被拼进
+        ``processed_plain_text``。必须先按 reply 段的原文预览剔除，否则概览内的
+        URL 会被当作新一轮直接下载请求，导致引用回复“下载”无法被确认接管。
+        """
+        for segment in message.get("raw_message", []) or []:
+            if not isinstance(segment, dict) or segment.get("type") != "reply":
+                continue
+            data = segment.get("data")
+            if not isinstance(data, dict):
+                continue
+            preview = str(data.get("target_message_content") or "").strip()
+            if preview:
+                text = text.replace(preview, "")
+        return text
 
     @staticmethod
     def _mention_noise(message: dict[str, Any]) -> list[str]:

@@ -18,7 +18,7 @@ from . import entry_check_data as data
 
 def make_plugin() -> MultiPlatformParserPlugin:
     plugin = MultiPlatformParserPlugin()
-    plugin.set_plugin_config({"plugin": {"enabled": True, "config_version": "0.3.6"}})
+    plugin.set_plugin_config({"plugin": {"enabled": True, "config_version": "0.3.7"}})
     assert isinstance(plugin.config, PluginConfig)
     return plugin
 
@@ -462,6 +462,70 @@ class TestPendingDownloadReply:
         pending, choices, queue_size, error = plugin._consume_pending_download(message, own_source)
         assert pending is item
         assert not choices and queue_size == 1 and error is None
+
+
+class TestReplyQuotedOverview:
+    """引用 bot 概览卡片时，整块概览（含链接）会内联进 processed_plain_text。
+
+    必须按 reply 段的 target_message_content 原文剔除，否则概览内的 URL 会被
+    ``direct_download`` 误判，导致“下载”确认无法被接管而落入 Planner。
+    """
+
+    @staticmethod
+    def pending(url: str, title: str) -> PendingDownload:
+        return PendingDownload(
+            parser=None,
+            keyword="",
+            searched=None,
+            url=url,
+            reference_urls=(url,),
+            title=title,
+            expires_at=2**62,
+            delivery_state="pending",
+        )
+
+    def test_quoted_overview_url_does_not_make_direct_download(self) -> None:
+        plugin = make_plugin()
+        message = data.reply_download_with_quoted_overview_message(
+            "https://www.bilibili.com/video/BV1xx411c7mD/", user_id="10001"
+        )
+        assert plugin._has_reply(message)
+        assert plugin._is_bot_addressed(message)
+
+        own_source = plugin._strip_bot_download_hint(
+            plugin._message_source(message, include_reply=False)
+        )
+        assert own_source == "下载"
+        assert not plugin._extract_urls(own_source)
+        assert plugin._has_download_command(own_source)
+
+        is_download_intent = plugin._has_download_command(own_source)
+        direct_download = is_download_intent and bool(plugin._extract_urls(own_source))
+        assert is_download_intent and not direct_download
+
+    def test_quoted_overview_reply_consumes_pending(self) -> None:
+        plugin = make_plugin()
+        url = "https://www.bilibili.com/video/BV1xx411c7mD/"
+        message = data.reply_download_with_quoted_overview_message(url, user_id="10001")
+        key = (plugin._session_id(message), "10001")
+        item = self.pending(url, "视频A")
+        plugin._pending_downloads[key] = [item]
+
+        own_source = plugin._strip_bot_download_hint(
+            plugin._message_source(message, include_reply=False)
+        )
+        pending, choices, queue_size, error = plugin._consume_pending_download(message, own_source)
+        assert pending is item
+        assert not choices and queue_size == 1 and error is None
+
+    def test_literal_at_quoted_overview_still_strips_to_command(self) -> None:
+        plugin = make_plugin()
+        message = data.reply_download_at_as_literal_text_message(
+            "https://v.douyin.com/video-a", user_id="10001"
+        )
+        own_source = plugin._message_source(message, include_reply=False)
+        assert own_source == "下载"
+        assert plugin._has_download_command(own_source)
 
 
 class TestBotAddressed:

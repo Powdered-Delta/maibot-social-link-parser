@@ -206,24 +206,60 @@ def reply_download_at_as_literal_text_message(
 ) -> dict[str, Any]:
     """引用回复 bot 概览，自动 @ 群名片以纯文本拼入（无结构化 at 段）。
 
-    对应生产日志所见：``... @ai-黄老邪大王  下载``，其中回复占位与
-    ``@群名片`` 都在 ``processed_plain_text`` 里，raw_message 只有 reply 与 text 段。
+    对应生产日志所见：``processed_plain_text`` 内联整块引用预览（含链接、图片占位
+    与下载提示）+ ``@群名片  下载``；raw_message 只有 reply 与 text 段。
     """
     message = with_user(with_group(base_message()), user_id)
     message["is_mentioned"] = True
     message["is_at"] = True
+    preview = f"标题\n链接：{target_url}\n回复“下载”获取原媒体。"
     message["raw_message"] = [
         {
             "type": "reply",
             "data": {
                 "target_message_id": "bot-overview",
-                "target_message_content": f"标题\n链接：{target_url}\n回复“下载”获取原媒体。",
+                "target_message_content": preview,
                 "target_message_sender_id": "12345",
             },
         },
         {"type": "text", "data": "@bot群名片  下载"},
     ]
-    message["processed_plain_text"] = "[reply]@bot群名片  下载"
+    message["processed_plain_text"] = f"{preview}\n@bot群名片  下载"
+    return message
+
+
+def reply_download_with_quoted_overview_message(
+    target_url: str, *, user_id: str = "10001"
+) -> dict[str, Any]:
+    """引用回复 bot 概览卡片，整块概览（含链接）内联进纯文本，@ 为结构化 at 段。
+
+    对齐 MaiBot：reply 组件渲染为 ``target_message_content`` 完整预览，at 段渲染为
+    ``@群名片``，与用户文本一并拼进 ``processed_plain_text``；@到 bot 时
+    ``is_mentioned`` 置位。
+    """
+    message = with_user(with_group(base_message()), user_id)
+    message["is_mentioned"] = True
+    message["is_at"] = True
+    preview = (
+        f"标题：视频A\n作者：UP主\n封面：[image]\nB站 视频：{target_url}\n"
+        f"播放：123\n回复“下载”获取原媒体。"
+    )
+    message["raw_message"] = [
+        {
+            "type": "reply",
+            "data": {
+                "target_message_id": "bot-overview",
+                "target_message_content": preview,
+                "target_message_sender_id": "12345",
+            },
+        },
+        {
+            "type": "at",
+            "data": {"target_user_id": "12345", "target_user_cardname": "ai-黄老邪大王"},
+        },
+        {"type": "text", "data": "  下载"},
+    ]
+    message["processed_plain_text"] = f"{preview}\n@ai-黄老邪大王  下载"
     return message
 
 
