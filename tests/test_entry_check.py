@@ -329,6 +329,71 @@ class TestPendingDownloadReply:
         assert pending is None and not choices and queue_size == 0
         assert error == "引用的详情卡片不属于你的待下载内容，无法下载。"
 
+    def test_delegate_user_global_blacklist_does_not_block_authorized_quote(self) -> None:
+        plugin = make_plugin()
+        enable_advanced_parser(
+            plugin,
+            user_blacklist=["20002"],
+            cross_sender_download_user_whitelist=["20002"],
+        )
+        message = data.reply_download_message("https://v.douyin.com/video-a", user_id="20002")
+        owner_key = (plugin._session_id(message), "10001")
+        original = self.pending("https://v.douyin.com/video-a", "视频 A")
+        plugin._pending_downloads[owner_key] = [original]
+
+        pending, choices, queue_size, error = plugin._consume_pending_download(
+            message, plugin._message_source(message)
+        )
+
+        assert pending is original
+        assert not choices and queue_size == 1 and error is None
+
+    def test_global_blacklisted_delegate_requires_explicit_allowlist(self) -> None:
+        plugin = make_plugin()
+        enable_advanced_parser(
+            plugin,
+            user_blacklist=["20002"],
+            cross_sender_download_access_mode="blacklist",
+        )
+        message = data.reply_download_message("https://v.douyin.com/video-a", user_id="20002")
+        owner_key = (plugin._session_id(message), "10001")
+        plugin._pending_downloads[owner_key] = [self.pending("https://v.douyin.com/video-a", "视频 A")]
+
+        pending, choices, queue_size, error = plugin._consume_pending_download(
+            message, plugin._message_source(message)
+        )
+
+        assert pending is None and not choices and queue_size == 0
+        assert error == "引用的详情卡片不属于你的待下载内容，无法下载。"
+
+    def test_delegate_must_quote_bot_overview(self) -> None:
+        plugin = make_plugin()
+        enable_advanced_parser(plugin, cross_sender_download_user_whitelist=["20002"])
+        message = data.reply_download_message("https://v.douyin.com/video-a", user_id="20002")
+        message["raw_message"][0]["data"]["target_message_sender_id"] = "30003"
+        owner_key = (plugin._session_id(message), "10001")
+        plugin._pending_downloads[owner_key] = [self.pending("https://v.douyin.com/video-a", "视频 A")]
+
+        pending, choices, queue_size, error = plugin._consume_pending_download(
+            message, plugin._message_source(message)
+        )
+
+        assert pending is None and not choices and queue_size == 0
+        assert error == "引用的详情卡片不属于你的待下载内容，无法下载。"
+
+    def test_global_sender_blacklist_blocks_own_pending_download(self) -> None:
+        plugin = make_plugin()
+        enable_advanced_parser(plugin, user_blacklist=["10001"])
+        message = data.reply_download_message("https://v.douyin.com/video-a", user_id="10001")
+        key = (plugin._session_id(message), "10001")
+        plugin._pending_downloads[key] = [self.pending("https://v.douyin.com/video-a", "视频 A")]
+
+        pending, choices, queue_size, error = plugin._consume_pending_download(
+            message, plugin._message_source(message)
+        )
+
+        assert pending is None and not choices and queue_size == 0 and error is None
+
     def test_sent_item_cannot_be_downloaded_twice(self) -> None:
         plugin = make_plugin()
         message = data.reply_download_message("https://v.douyin.com/video-a", user_id="10001")

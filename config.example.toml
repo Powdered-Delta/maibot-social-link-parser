@@ -1,7 +1,7 @@
 [plugin]
 name = "maibot_social_link_parser"
-config_version = "0.3.4"
-version = "0.3.4"
+config_version = "0.3.5"
+version = "0.3.5"
 enabled = true
 # Do not send to QQ/NapCat. Parsing and downloads still run for local validation.
 dry_run = false
@@ -17,7 +17,9 @@ send_preview_image = true
 [parser_advanced]
 # When disabled, all fields in this group are ignored and built-in defaults are used.
 enabled = false
-# Access control. Denylist wins when it overlaps the allowlist.
+# Link-sender access control. It applies only to the user who posted a new link;
+# denylist wins when it overlaps the allowlist. It also applies to delegated
+# requesters unless their user or group is explicitly allowlisted for delegation.
 group_whitelist = []
 group_blacklist = []
 user_whitelist = []
@@ -36,8 +38,9 @@ use_forward_for_multi = true
 gallery_delivery_mode = "default"
 pending_download_ttl_seconds = 600
 pending_download_selection = "latest"
-# Users in these groups, or listed below, may reply to another user's bot overview
-# and download its media. Leave both empty to require the original sender.
+# Delegated group downloads only: users in these groups, or listed below, may
+# quote-reply to another sender's bot overview and download its media. This does
+# not affect who may share links or download their own links.
 cross_sender_download_access_mode = "whitelist"
 cross_sender_download_group_whitelist = []
 cross_sender_download_user_whitelist = []

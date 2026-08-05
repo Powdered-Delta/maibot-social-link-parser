@@ -68,7 +68,15 @@
 
 发送“链接 + 下载”（任意先后顺序）会在解析成功后直接下载，不必等待概览卡片。回复 bot 的概览卡片并发送“下载”时，插件会按引用卡片中的链接定位待下载内容；引用他人内容不会回退下载自己的最新任务。
 
-默认只有原链接发送者能确认下载。跨用户下载可由 `parser_advanced.cross_sender_download_access_mode` 控制：`disabled` 始终仅原发送者，`whitelist` 仅群或用户白名单命中时允许，`blacklist` 则除群或用户黑名单命中外均允许。即使权限命中，仍必须回复 bot 的详情卡片并由其引用链接唯一命中待下载内容。
+### 权限规则
+
+权限分为两个彼此独立的层次，不能混用：
+
+1. **链接发送者全局权限**：`parser_advanced.user_whitelist` 和 `parser_advanced.user_blacklist` 检查新链接的原发送者。发送者通过该检查后，可正常解析链接、创建待下载任务、发送“链接 + 下载”直接下载，以及确认下载自己分享的链接。黑名单优先于白名单；白名单为空时允许所有未被黑名单命中的发送者。代触发者默认也需通过这套全局名单，除非有显式的代触发白名单授权。
+2. **聊天范围权限**：群和私聊黑白名单决定插件是否在对应会话工作。它们不用于判定群成员能否代替他人下载。
+3. **群聊引用代触发权限**：默认只有原链接发送者能确认下载。其他群成员如需下载他人分享的媒体，必须引用回复 Bot 的对应详情卡片，且由 `parser_advanced.cross_sender_download_access_mode` 授权：`disabled` 始终仅原发送者，`whitelist` 仅群或用户白名单命中时允许，`blacklist` 则除群或用户黑名单命中外均允许。代触发者也默认受链接发送者全局黑白名单约束；若其未通过全局名单，只有被显式加入代触发群白名单或用户白名单时才可例外代触发。
+
+即使代触发权限命中，也必须在群聊中引用 Bot 的详情卡片，并由被引用卡片中的链接唯一命中待下载内容。引用普通成员消息、只发送“下载”、或引用不含唯一链接的卡片都不会代为下载。
 
 同一详情卡片的媒体在发送成功后会标记为已发送；后续回复不会重复下载。下载进行中也会拒绝重复请求。若下载或发送失败，任务恢复为可确认状态，可再次回复“下载”重试。
 
@@ -109,16 +117,16 @@ git clone git@github.com:Powdered-Delta/maibot-social-link-parser.git
 | `parser_advanced.gallery_delivery_mode` | `default` | 静态图集默认跟随 QQ 通道；WebSocket 经 MaiBot 合并转发发送，可设为 `http_forward` 使用 OneBot HTTP |
 | `parser_advanced.pending_download_ttl_seconds` | `600` | 等待用户确认下载的有效期，单位秒 |
 | `parser_advanced.pending_download_selection` | `latest` | 回复 bot 概览卡片时优先按引用链接精确选择；非回复的“下载”在 `latest` 下选最新一条，`number` 要求“下载 1”等明确编号 |
-| `parser_advanced.cross_sender_download_group_whitelist` | `[]` | 这些群内允许用户回复详情卡片下载其他发送者的媒体；留空保持原发送者权限隔离 |
-| `parser_advanced.cross_sender_download_user_whitelist` | `[]` | 这些用户可回复详情卡片下载其他发送者的媒体；留空不按用户放宽权限 |
+| `parser_advanced.cross_sender_download_group_whitelist` | `[]` | 这些群内允许成员引用 Bot 详情卡片代触发下载；也可显式豁免请求者的全局用户黑白名单 |
+| `parser_advanced.cross_sender_download_user_whitelist` | `[]` | 这些用户可引用 Bot 详情卡片代触发下载；也可显式豁免其全局用户黑白名单 |
 | `parser_advanced.cross_sender_download_access_mode` | `whitelist` | 跨用户下载授权模式：`disabled`、`whitelist` 或 `blacklist` |
 | `parser_advanced.cross_sender_download_group_blacklist` | `[]` | 黑名单模式下，禁止跨用户下载的群 |
 | `parser_advanced.cross_sender_download_user_blacklist` | `[]` | 黑名单模式下，禁止跨用户下载的用户 |
 | `parser_advanced.reaction_emoji_enabled` | `true` | 识别链接后是否添加 QQ 表情回应 |
 | `parser_advanced.group_whitelist` | `[]` | 仅这些群自动解析；留空表示所有群 |
 | `parser_advanced.group_blacklist` | `[]` | 这些群不自动解析；与白名单重叠时黑名单优先 |
-| `parser_advanced.user_whitelist` | `[]` | 仅这些用户的链接会解析（群聊与私聊均生效）；留空表示所有用户 |
-| `parser_advanced.user_blacklist` | `[]` | 这些用户的链接不解析；与白名单重叠时黑名单优先 |
+| `parser_advanced.user_whitelist` | `[]` | 链接发送者全局白名单：仅这些用户分享的链接可解析、创建待下载任务或直接下载；代触发者默认也受限，除非被显式加入代触发白名单 |
+| `parser_advanced.user_blacklist` | `[]` | 链接发送者全局黑名单：这些用户分享的链接不会解析、创建待下载任务或直接下载；代触发者默认也受限，显式代触发白名单可例外；黑名单优先 |
 | `parser_advanced.private_whitelist` | `[]` | 仅这些用户的私聊链接会解析；留空表示允许所有私聊 |
 | `parser_advanced.private_blacklist` | `[]` | 这些用户的私聊链接不解析 |
 | `parser_advanced.download_intent_regex` | `""` | 追加的独立下载确认命令正则，与默认“下载”取并集，同时支持“下载 1”编号选择；留空仅用默认 |
@@ -169,7 +177,8 @@ git clone git@github.com:Powdered-Delta/maibot-social-link-parser.git
 
 ## 更新历史
 
-- `0.3.4`：仅独立的“下载”或“下载 序号”命令会确认下载，普通发言或回复内容中包含“下载”不会触发；任意回复消息不再作为新的链接分享重新解析。跨用户下载授权支持禁用、白名单和黑名单模式；详情卡片的媒体发送成功后标记为已发送，下载中或已发送时拒绝重复请求，失败后允许再次确认；统一媒体下载额外重试次数默认值为 3。
+- `0.3.5`：明确并实现权限边界：全局用户黑白名单限制链接原发送者，也默认限制代触发者；群聊中他人下载必须引用 Bot 详情卡片，只有显式代触发白名单可豁免请求者的全局用户限制。
+  - `0.3.4`：仅独立的“下载”或“下载 序号”命令会确认下载，普通发言或回复内容中包含“下载”不会触发；任意回复消息不再作为新的链接分享重新解析。跨用户下载授权支持禁用、白名单和黑名单模式；详情卡片的媒体发送成功后标记为已发送，下载中或已发送时拒绝重复请求，失败后允许再次确认；统一媒体下载额外重试次数默认值为 3。
 - `0.3.2`：支持“链接 + 下载”直接下载；回复详情卡片时按引用链接精确选择待下载任务，避免跨用户误下载最新内容；可通过跨用户下载群/用户白名单授权其他人下载；补充 B站小程序卡片的顶层负载兼容与未启用 B站解析器的诊断日志。
 - `0.3.0`：修复 B站等小程序卡片分享不触发解析（从 `platform_card_payloads` 补回 `qqdocurl` 真实链接）；配置拆分出 `parser_advanced` 与 `network_advanced` 两个独立高级分组，每分组带独立开关，关闭时忽略该组全部字段并使用内置默认值；新增入口检查单元测试。
 - `0.2.0`：增加可配置的下载意图正则、群聊/私聊/用户黑白名单。

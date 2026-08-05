@@ -107,8 +107,8 @@ class ParserAdvancedSectionConfig(PluginConfigBase):
     enabled: bool = Field(default=False, description="启用高级解析配置", json_schema_extra=_ui("启用高级解析配置", "关闭时忽略本分组全部字段并使用内置默认值；需要精细控制黑白名单、去重、媒体限制或表情回应时再开启。", 0, label_en="Enable advanced parser settings", hint_en="When disabled, all fields in this group are ignored and built-in defaults are used. Turn on only when you need fine control over allow/deny lists, deduplication, media limits, or reactions.", label_ja="詳細な解析設定を有効化", hint_ja="無効時は本グループの全項目を無視し、内蔵デフォルト値を使用します。許可・拒否リスト、重複除外、メディア制限、リアクションの細かい調整が必要な場合のみ有効化してください。"))
     group_whitelist: list[str] = Field(default_factory=list, description="自动解析群白名单", json_schema_extra=_ui("自动解析群白名单", "仅这些 QQ 群自动解析；留空表示所有群。填入群号字符串。", 1, label_en="Group allowlist", hint_en="Only parse automatically in these QQ groups. Leave empty for all groups. Enter group IDs as strings.", label_ja="グループ許可リスト", hint_ja="指定した QQ グループでのみ自動解析します。空欄は全グループです。グループ ID を文字列で入力します。"))
     group_blacklist: list[str] = Field(default_factory=list, description="自动解析群黑名单", json_schema_extra=_ui("自动解析群黑名单", "这些 QQ 群不自动解析。填入群号字符串。与白名单同时命中时黑名单优先。", 1, label_en="Group denylist", hint_en="Never parse automatically in these QQ groups. Enter group IDs as strings. Denylist wins when it overlaps the allowlist.", label_ja="グループ拒否リスト", hint_ja="自動解析しない QQ グループです。グループ ID を文字列で入力します。許可リストと重複した場合は拒否が優先されます。"))
-    user_whitelist: list[str] = Field(default_factory=list, description="自动解析用户白名单", json_schema_extra=_ui("自动解析用户白名单", "仅这些 QQ 用户发送的链接会解析；留空表示所有用户。同时作用于群聊和私聊。填入 QQ 号字符串。", 1, label_en="User allowlist", hint_en="Only parse links sent by these QQ users. Leave empty for all users. Applies to both group and private chats. Enter QQ numbers as strings.", label_ja="ユーザー許可リスト", hint_ja="指定した QQ ユーザーが送信したリンクのみ解析します。空欄は全ユーザーです。グループと個別チャットの両方に適用されます。QQ 番号を文字列で入力します。"))
-    user_blacklist: list[str] = Field(default_factory=list, description="自动解析用户黑名单", json_schema_extra=_ui("自动解析用户黑名单", "这些 QQ 用户发送的链接不解析。填入 QQ 号字符串。与白名单同时命中时黑名单优先。", 1, label_en="User denylist", hint_en="Never parse links sent by these QQ users. Enter QQ numbers as strings. Denylist wins when it overlaps the allowlist.", label_ja="ユーザー拒否リスト", hint_ja="指定した QQ ユーザーが送信したリンクを解析しません。QQ 番号を文字列で入力します。許可リストと重複した場合は拒否が優先されます。"))
+    user_whitelist: list[str] = Field(default_factory=list, description="链接发送者全局白名单", json_schema_extra=_ui("链接发送者全局白名单", "仅这些 QQ 用户发送的链接会解析、创建待下载任务或直接下载；留空表示所有用户。代触发者也默认遵守此名单，但被显式加入代触发白名单的用户或群可例外。", 1, label_en="Global link-sender allowlist", hint_en="Only links sent by these QQ users are parsed, queued, or directly downloaded. Leave empty for all users. Delegated requesters also follow this list unless their user or group is explicitly allowlisted for delegation.", label_ja="リンク送信者のグローバル許可リスト", hint_ja="指定した QQ ユーザーが送信したリンクのみ解析、待機登録、直接ダウンロードします。空欄は全ユーザーです。代理実行者も原則このリストに従いますが、代理許可リストに明示登録されたユーザーまたはグループは例外です。"))
+    user_blacklist: list[str] = Field(default_factory=list, description="链接发送者全局黑名单", json_schema_extra=_ui("链接发送者全局黑名单", "这些 QQ 用户发送的链接不解析、不会创建待下载任务或直接下载。黑名单优先于白名单；代触发者也默认受限，但显式代触发白名单可例外。", 1, label_en="Global link-sender denylist", hint_en="Links from these QQ users are not parsed, queued, or directly downloaded. Denylist wins over allowlist. Delegated requesters are also blocked by default, except when explicitly allowlisted for delegation.", label_ja="リンク送信者のグローバル拒否リスト", hint_ja="指定した QQ ユーザーのリンクは解析、待機登録、直接ダウンロードしません。拒否リストは許可リストより優先されます。代理実行者も原則制限されますが、代理許可リストに明示登録された場合は例外です。"))
     private_whitelist: list[str] = Field(default_factory=list, description="私聊自动解析用户白名单", json_schema_extra=_ui("私聊自动解析用户白名单", "仅这些 QQ 用户的私聊链接会解析；留空表示允许所有私聊。填入 QQ 号字符串。", 1, label_en="Private-chat user allowlist", hint_en="Only parse private-chat links from these QQ users. Leave empty to allow all private chats. Enter QQ numbers as strings.", label_ja="個別チャット許可リスト", hint_ja="指定した QQ ユーザーとの個別チャットのリンクのみ解析します。空欄はすべての個別チャットを許可します。QQ 番号を文字列で入力します。"))
     private_blacklist: list[str] = Field(default_factory=list, description="私聊自动解析用户黑名单", json_schema_extra=_ui("私聊自动解析用户黑名单", "这些 QQ 用户的私聊链接不解析。填入 QQ 号字符串。与白名单同时命中时黑名单优先。", 1, label_en="Private-chat user denylist", hint_en="Never parse private-chat links from these QQ users. Enter QQ numbers as strings. Denylist wins when it overlaps the allowlist.", label_ja="個別チャット拒否リスト", hint_ja="指定した QQ ユーザーとの個別チャットのリンクを解析しません。QQ 番号を文字列で入力します。許可リストと重複した場合は拒否が優先されます。"))
     download_intent_regex: str = Field(default="", description="自定义下载确认意图正则", json_schema_extra=_ui("自定义下载确认意图正则", "追加的独立下载确认命令正则，与默认的“下载”取并集；同时支持“下载 1”这类编号选择。留空仅使用默认命令。", 1, label_en="Custom download-command regex", hint_en="Extra standalone download-command regex combined with the default 下载 command. Numbered selections such as 下载 1 are supported. Leave empty to use the default only.", label_ja="ダウンロード確認コマンドのカスタム正規表現", hint_ja="既定の「下载」コマンドと併用する独立した確認ダウンロード用の正規表現です。「下载 1」のような番号指定も対応します。空欄は既定のみです。", placeholder=r"下載|down ?load"))
@@ -296,7 +296,7 @@ class MultiPlatformParserPlugin(MaiBotPlugin):
             return None
 
         message: dict[str, Any] = kwargs.get("message", {}) or {}
-        if not self._is_allowed_message(message):
+        if not self._is_allowed_chat(message):
             return None
 
         source = self._strip_bot_download_hint(self._message_source(message))
@@ -324,6 +324,11 @@ class MultiPlatformParserPlugin(MaiBotPlugin):
         # Replies are conversational context, not fresh link shares. Only an exact
         # download command is handled above; all other replies pass to normal chat.
         if self._has_reply(message) or self._is_bot_addressed(message):
+            return None
+
+        # The global user lists apply to the person who shared the new link, not
+        # to someone who has quoted another sender's existing overview.
+        if not self._is_allowed_link_sender(sender_id):
             return None
 
         candidates = self._extract_urls(source)
@@ -825,7 +830,11 @@ class MultiPlatformParserPlugin(MaiBotPlugin):
         if not sender_id:
             return None, [], 0, None
         key = (session_id, sender_id)
-        entries = [entry for entry in self._pending_downloads.get(key, []) if entry.expires_at >= time.time()]
+        entries = [
+            entry
+            for entry in self._pending_downloads.get(key, [])
+            if entry.expires_at >= time.time() and self._is_allowed_link_sender(sender_id)
+        ]
         reply_urls = self._reply_urls(message)
 
         # A QQ reply contains the referenced bot message preview. Only consume the
@@ -836,6 +845,8 @@ class MultiPlatformParserPlugin(MaiBotPlugin):
             if not matched and self._can_download_for_others(message):
                 for candidate_key, candidate_entries in self._pending_downloads.items():
                     if candidate_key[0] != session_id or candidate_key == key:
+                        continue
+                    if not self._is_allowed_link_sender(candidate_key[1]):
                         continue
                     active = [entry for entry in candidate_entries if entry.expires_at >= time.time()]
                     candidate_matches = [
@@ -904,17 +915,25 @@ class MultiPlatformParserPlugin(MaiBotPlugin):
         return urls
 
     def _can_download_for_others(self, message: dict[str, Any]) -> bool:
-        """是否允许当前请求者消费其他发送者的待下载任务。"""
+        """是否允许群成员引用 Bot 详情卡片代为下载其他发送者的任务。"""
         advanced = self._parser_advanced()
         group_id = self._get_group_id(message)
         user_id = self._get_user_id(message)
+        if not group_id or not self._is_reply_to_bot(message):
+            return False
         mode = advanced.cross_sender_download_access_mode
         if mode == "disabled":
             return False
         group_allow = {str(item).strip() for item in advanced.cross_sender_download_group_whitelist if str(item).strip()}
         user_allow = {str(item).strip() for item in advanced.cross_sender_download_user_whitelist if str(item).strip()}
+        explicitly_delegated = bool((group_id and group_id in group_allow) or (user_id and user_id in user_allow))
+
+        # The global link-sender lists also protect a requester by default. An
+        # explicit delegated-download allowlist entry is the only override.
+        if not self._is_allowed_link_sender(user_id) and not explicitly_delegated:
+            return False
         if mode == "whitelist":
-            return bool((group_id and group_id in group_allow) or (user_id and user_id in user_allow))
+            return explicitly_delegated
         group_block = {str(item).strip() for item in advanced.cross_sender_download_group_blacklist if str(item).strip()}
         user_block = {str(item).strip() for item in advanced.cross_sender_download_user_blacklist if str(item).strip()}
         return not bool((group_id and group_id in group_block) or (user_id and user_id in user_block))
@@ -969,8 +988,8 @@ class MultiPlatformParserPlugin(MaiBotPlugin):
     def _session_id(self, message: dict[str, Any]) -> str:
         return str(message.get("session_id", "") or self._group_or_user_id(message) or "unknown")
 
-    def _is_allowed_message(self, message: dict[str, Any]) -> bool:
-        """应用群聊/私聊/用户的 黑白名单。黑名单优先于白名单。"""
+    def _is_allowed_chat(self, message: dict[str, Any]) -> bool:
+        """应用群聊和私聊范围名单，不检查当前发言者的全局链接权限。"""
         group_id = self._get_group_id(message)
         user_id = self._get_user_id(message)
 
@@ -979,8 +998,6 @@ class MultiPlatformParserPlugin(MaiBotPlugin):
 
         group_allow = norm(self._parser_advanced().group_whitelist)
         group_block = norm(self._parser_advanced().group_blacklist)
-        user_allow = norm(self._parser_advanced().user_whitelist)
-        user_block = norm(self._parser_advanced().user_blacklist)
         private_allow = norm(self._parser_advanced().private_whitelist)
         private_block = norm(self._parser_advanced().private_blacklist)
 
@@ -995,12 +1012,21 @@ class MultiPlatformParserPlugin(MaiBotPlugin):
             if private_allow and (not user_id or user_id not in private_allow):
                 return False
 
-        if user_id:
-            if user_id in user_block:
-                return False
-            if user_allow and user_id not in user_allow:
-                return False
         return True
+
+    def _is_allowed_link_sender(self, sender_id: str | None) -> bool:
+        """检查链接原发送者的全局黑白名单，黑名单优先。"""
+        user_allow = {str(item).strip() for item in self._parser_advanced().user_whitelist if str(item).strip()}
+        user_block = {str(item).strip() for item in self._parser_advanced().user_blacklist if str(item).strip()}
+        if not sender_id:
+            return not user_allow
+        if sender_id in user_block:
+            return False
+        return not user_allow or sender_id in user_allow
+
+    def _is_allowed_message(self, message: dict[str, Any]) -> bool:
+        """兼容入口测试：检查聊天范围和当前链接发送者的全局权限。"""
+        return self._is_allowed_chat(message) and self._is_allowed_link_sender(self._get_user_id(message))
 
     def _is_recent(self, session_id: str, url: str) -> bool:
         interval = int(self._parser_advanced().debounce_seconds)
@@ -1064,6 +1090,10 @@ class MultiPlatformParserPlugin(MaiBotPlugin):
             if target_sender == self_id:
                 return True
         return False
+
+    def _is_reply_to_bot(self, message: dict[str, Any]) -> bool:
+        """判断是否引用当前 Bot 发出的详情卡片。"""
+        return self._is_bot_addressed(message)
 
     @staticmethod
     def _get_user_id(message: dict[str, Any]) -> str | None:
