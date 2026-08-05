@@ -235,11 +235,13 @@ class MultiPlatformParserPlugin(MaiBotPlugin):
     config_model = PluginConfig
     config_reload_subscriptions: tuple[str, ...] = ()
 
-    _downloader: Downloader | None = None
-    _parsers: list[BaseParser] = []
-    _recent: dict[tuple[str, str], float] = {}
-    _pending_downloads: dict[tuple[str, str], list[PendingDownload]] = {}
-    _tasks: set[asyncio.Task[Any]] = set()
+    def __init__(self) -> None:
+        super().__init__()
+        self._downloader: Downloader | None = None
+        self._parsers: list[BaseParser] = []
+        self._recent: dict[tuple[str, str], float] = {}
+        self._pending_downloads: dict[tuple[str, str], list[PendingDownload]] = {}
+        self._tasks: set[asyncio.Task[Any]] = set()
 
     async def on_load(self) -> None:
         if not self.config.plugin.enabled:
@@ -320,6 +322,13 @@ class MultiPlatformParserPlugin(MaiBotPlugin):
             if choices:
                 await self._send_text(message, self._pending_choice_prompt(choices))
                 return {"action": "abort"} if self.config.parser.block_ai_reply else None
+            self.ctx.logger.info(
+                "Download command has no eligible pending item: session=%s sender=%s",
+                session_id,
+                sender_id or "unknown",
+            )
+            await self._send_text(message, "当前会话没有可确认下载的内容，请先发送链接或引用对应的详情卡片。")
+            return {"action": "abort"} if self.config.parser.block_ai_reply else None
 
         # Replies are conversational context, not fresh link shares. Only an exact
         # download command is handled above; all other replies pass to normal chat.
@@ -841,7 +850,7 @@ class MultiPlatformParserPlugin(MaiBotPlugin):
         # pending entry whose original or resolved URL is present in that preview.
         if reply_urls:
             matched = [entry for entry in entries if set(entry.reference_urls).intersection(reply_urls)]
-            matched_key = key
+            matched_queue_size = len(entries)
             if not matched and self._can_download_for_others(message):
                 for candidate_key, candidate_entries in self._pending_downloads.items():
                     if candidate_key[0] != session_id or candidate_key == key:
@@ -856,15 +865,20 @@ class MultiPlatformParserPlugin(MaiBotPlugin):
                         if matched or len(candidate_matches) > 1:
                             return None, [], 0, "引用的详情卡片对应多条待下载内容，请由原发送者确认下载。"
                         matched = candidate_matches
-                        matched_key = candidate_key
+                        matched_queue_size = len(active)
             if len(matched) == 1:
                 pending = matched[0]
                 if pending.delivery_state == "sent":
                     return None, [], 0, "该详情卡片的媒体已成功发送，无需重复下载。"
                 if pending.delivery_state == "downloading":
                     return None, [], 0, "该详情卡片的媒体正在下载，请勿重复请求。"
-                return pending, [], 1, None
+                return pending, [], matched_queue_size, None
             if not matched:
+                if not self._is_allowed_link_sender(sender_id) and any(
+                    set(entry.reference_urls).intersection(reply_urls)
+                    for entry in self._pending_downloads.get(key, [])
+                ):
+                    return None, [], 0, None
                 return None, [], len(entries), "引用的详情卡片不属于你的待下载内容，无法下载。"
             return None, matched, len(entries), None
 
@@ -944,7 +958,7 @@ class MultiPlatformParserPlugin(MaiBotPlugin):
         return f"(?:{default}|{custom})" if custom else f"(?:{default})"
 
     def _is_download_confirmation(self, text: str) -> bool:
-        return bool(re.fullmatch(rf"{self._download_intent_pattern()}\s*[1-9]\d*", text.strip()))
+        return bool(re.fullmatch(rf"{self._download_intent_pattern()}\s*(?:[1-9]\d*)?", text.strip()))
 
     def _has_download_command(self, text: str) -> bool:
         """消息中是否有独立一行的下载命令，而非普通语句中的“下载”字样。"""

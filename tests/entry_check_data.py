@@ -237,7 +237,7 @@ def reply_other_link_message(text: str = "这个视频怎么下载？") -> dict[
 # ---------------------------------------------------------------
 
 GROUP_BLOCKED = with_group(base_message(session_id="s-group-blocked"))
-GROUP_ALLOWED = with_group(base_message(session_id="s-group-allowed"))
+GROUP_ALLOWED = with_group(base_message(session_id="s-group-allowed"), group_id="999002")
 GROUP_OTHER = with_group(base_message(session_id="s-group-other"), group_id="999999")
 
 USER_BLOCKED = with_user(with_group(base_message(session_id="s-user-blocked")), "666001")

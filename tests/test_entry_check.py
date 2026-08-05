@@ -18,7 +18,7 @@ from . import entry_check_data as data
 
 def make_plugin() -> MultiPlatformParserPlugin:
     plugin = MultiPlatformParserPlugin()
-    plugin.set_plugin_config({"plugin": {"enabled": True}})
+    plugin.set_plugin_config({"plugin": {"enabled": True, "config_version": "0.3.5"}})
     assert isinstance(plugin.config, PluginConfig)
     return plugin
 
@@ -159,6 +159,13 @@ class TestDownloadConfirmation:
         text = "4.61 复制打开抖音，看看【MFX的作品】陆行虎鲸生气时…\n下载"
         assert plugin._has_download_command(text)
         assert not plugin._extract_urls(text)
+
+    def test_exact_download_command_is_detected_from_message_source(self) -> None:
+        plugin = make_plugin()
+        message = data.download_confirm_message()
+        own_source = plugin._message_source(message, include_reply=False)
+        assert own_source == "下载"
+        assert plugin._has_download_command(own_source)
 
 
 class TestExtractUrls:
