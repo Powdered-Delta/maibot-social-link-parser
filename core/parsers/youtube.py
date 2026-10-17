@@ -15,44 +15,49 @@ from .base import BaseParser, Platform, handle
 
 class YouTubeParser(BaseParser):
     # 平台信息
-    platform: ClassVar[Platform] = Platform(name="youtube", display_name="油管")
+    platform: ClassVar[Platform] = Platform(name="youtube", display_name="YouTube")
 
     def __init__(self, config: PluginConfig, downloader: Downloader):
         super().__init__(config, downloader)
         self.mycfg = config.parser.youtube
         if not self.mycfg.cookies:
-            logger.warning("油管Cookie未配置，将无法解析相关媒体")
+            logger.debug("YouTube Cookie 未配置，部分受限视频可能解析失败")
         self.headers.update({"Referer": "https://www.youtube.com/"})
         self.cookiejar = CookieJar(config, self.mycfg, domain="youtube.com")
 
-    @handle("youtu", r"youtu\.be/[A-Za-z\d\._\?%&\+\-=/#]+")
+    # 短链 https://youtu.be/dQw4w9WgXcQ
+    @handle("youtu.be", r"https?://(?:www\.)?youtu\.be/[A-Za-z0-9_\-]+")
+    # 普通视频 https://www.youtube.com/watch?v=dQw4w9WgXcQ&t=1s
     @handle(
-        "youtube",
-        r"youtube\.com/(?:watch|shorts)(?:/[A-Za-z\d_\-]+|\?v=[A-Za-z\d_\-]+)",
+        "youtube.com/watch",
+        r"https?://(?:www\.|m\.)?youtube\.com/watch\?(?:[^\s]*&)?v=[A-Za-z0-9_\-]+",
+    )
+    # Shorts https://www.youtube.com/shorts/dQw4w9WgXcQ
+    @handle(
+        "youtube.com/shorts",
+        r"https?://(?:www\.|m\.)?youtube\.com/shorts/[A-Za-z0-9_\-]+",
     )
     async def _parse_video(self, searched: re.Match[str]):
-        return await self.parse_video(searched)
+        return await self.parse_video(searched.group(0))
 
-    async def parse_video(self, searched: re.Match[str]):
-        # 从匹配对象中获取原始URL
-        url = searched.group(0)
-
+    async def parse_video(self, url: str):
         video_info = await self.downloader.ytdlp_extract_info(
             url,
             cookiefile=self.cookiejar.cookie_file,
             headers=self.headers,
             proxy=self.proxy,
         )
-        author = await self._fetch_author_info(video_info.channel_id)
+        author = await self._fetch_author_info(video_info)
 
         contents = []
-        if video_info.duration <= self.cfg.max_duration:
+        if 0 < video_info.duration <= self.cfg.max_duration:
+            # yt-dlp 下载并（必要时）经 ffmpeg 合并 DASH 音视频。
             video = self.downloader.ytdlp_download_video(
                 url,
                 cookiefile=self.cookiejar.cookie_file,
                 headers=self.headers,
                 proxy=self.proxy,
-                format="bv*[height<=720]+ba/b[height<=720]",
+                format="bv*[height<=720]+ba/b[height<=720]/b",
                 node=True,
             )
             contents.append(
@@ -62,53 +67,35 @@ class YouTubeParser(BaseParser):
                     video_info.duration,
                 )
             )
-        else:
+        elif video_info.thumbnail:
+            # 超过时长限制时只回传封面，避免无谓下载。
             contents.extend(self.create_image_contents([video_info.thumbnail]))
 
         return self.result(
+            url=url,
             title=video_info.title,
+            text=video_info.description or None,
             author=author,
             contents=contents,
             timestamp=video_info.timestamp,
         )
 
-    @handle(
-        "ym",
-        r"^ym(?P<url>https?://(?:www\.)?(youtu\.be/[A-Za-z\d_-]+|youtube\.com/(?:watch|shorts)(?:\?v=[A-Za-z\d_-]+|/[A-Za-z\d_-]+)))",
-    )
-    async def ym(self, searched: re.Match[str]):
-        """获取油管的音频(需加ym前缀)"""
-        url = searched.group("url")
-        video_info = await self.downloader.ytdlp_extract_info(
-            url,
-            cookiefile=self.cookiejar.cookie_file,
-            headers=self.headers,
-            proxy=self.proxy,
-        )
-        author = await self._fetch_author_info(video_info.channel_id)
-
-        contents = []
-        contents.extend(self.create_image_contents([video_info.thumbnail]))
-
-        if video_info.duration <= self.cfg.max_duration:
-            audio_task = self.downloader.ytdlp_download_audio(
-                url,
-                cookiefile=self.cookiejar.cookie_file,
-                headers=self.headers,
-                proxy=self.proxy,
-            )
-            contents.append(
-                self.create_audio_content(audio_task, duration=video_info.duration)
-            )
-
-        return self.result(
-            title=video_info.title,
-            author=author,
-            contents=contents,
-            timestamp=video_info.timestamp,
+    async def _fetch_author_info(self, video_info) -> object:
+        """优先取频道头像与简介，失败时回退到视频元数据里的频道名。"""
+        fallback = video_info.author_name
+        channel_id = getattr(video_info, "channel_id", "") or ""
+        if not channel_id:
+            return self.create_author(fallback)
+        try:
+            browse = await self._fetch_browse(channel_id)
+        except Exception as exc:
+            logger.debug("YouTube 频道信息获取失败，回退到视频元数据: %s", exc)
+            return self.create_author(fallback)
+        return self.create_author(
+            browse.name or fallback, browse.avatar_url, browse.description
         )
 
-    async def _fetch_author_info(self, channel_id: str):
+    async def _fetch_browse(self, channel_id: str) -> "BrowseResponse":
         url = "https://www.youtube.com/youtubei/v1/browse?prettyPrint=false"
         payload = {
             "context": {
@@ -139,9 +126,7 @@ class YouTubeParser(BaseParser):
         ) as resp:
             if resp.status >= 400:
                 raise ClientError(f"YouTube browse API {resp.status} {resp.reason}")
-            browse = msgspec.json.decode(await resp.read(), type=BrowseResponse)
-
-        return self.create_author(browse.name, browse.avatar_url, browse.description)
+            return msgspec.json.decode(await resp.read(), type=BrowseResponse)
 
 
 class Thumbnail(Struct):
@@ -149,21 +134,17 @@ class Thumbnail(Struct):
 
 
 class AvatarInfo(Struct):
-    thumbnails: list[Thumbnail]
+    thumbnails: list[Thumbnail] = []
 
 
 class ChannelMetadataRenderer(Struct):
-    title: str
-    description: str
-    avatar: AvatarInfo
+    title: str = ""
+    description: str = ""
+    avatar: AvatarInfo = AvatarInfo()
 
 
 class Metadata(Struct):
     channelMetadataRenderer: ChannelMetadataRenderer
-
-
-class Avatar(Struct):
-    thumbnails: list[Thumbnail]
 
 
 class BrowseResponse(Struct):
@@ -179,5 +160,5 @@ class BrowseResponse(Struct):
         return thumbnails[0].url if thumbnails else None
 
     @property
-    def description(self) -> str:
-        return self.metadata.channelMetadataRenderer.description
+    def description(self) -> str | None:
+        return self.metadata.channelMetadataRenderer.description or None
