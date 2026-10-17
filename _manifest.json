@@ -30,8 +30,28 @@
     },
     {
       "type": "python_package",
+      "name": "aiohttp",
+      "version_spec": ">=3.9.0"
+    },
+    {
+      "type": "python_package",
+      "name": "curl-cffi",
+      "version_spec": ">=0.7.0"
+    },
+    {
+      "type": "python_package",
       "name": "msgspec",
       "version_spec": ">=0.21.0"
+    },
+    {
+      "type": "python_package",
+      "name": "tqdm",
+      "version_spec": ">=4.66.0"
+    },
+    {
+      "type": "python_package",
+      "name": "typing-extensions",
+      "version_spec": ">=4.0.0"
     },
     {
       "type": "python_package",
