@@ -9,6 +9,10 @@ from __future__ import annotations
 
 from typing import Any
 
+# 群聊测试统一使用的会话与群号，供跨用户/引用下载相关断言复用。
+GROUP_ID = "999001"
+GROUP_SESSION = f"qq_group_{GROUP_ID}"
+
 
 def base_message(*, session_id: str = "s1") -> dict[str, Any]:
     return {

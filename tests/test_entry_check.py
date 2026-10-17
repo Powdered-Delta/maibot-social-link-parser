@@ -38,6 +38,107 @@ def enable_advanced_parser(plugin: MultiPlatformParserPlugin, **overrides) -> No
     plugin.config.parser_advanced = PluginConfig().parser_advanced.model_copy(update=base)
 
 
+class TestTrailingDownloadCommand:
+    """分享文案把“下载”粘在链接同一行末尾时也要识别为直接下载。"""
+
+    LINE = (
+        "2.51 复制打开抖音，看看【夏勒克的图文作品】有点恐怖了。# 维斯塔潘 # 勒克莱尔 # 汉密尔... "
+        "https://v.douyin.com/rnSdq-3hVrk/ KWM:/ 04/03 r@e.BG :8pm 下载"
+    )
+
+    def test_trailing_download_on_link_line_detected(self) -> None:
+        plugin = make_plugin()
+        assert plugin._has_trailing_download_command(self.LINE)
+        assert plugin._extract_urls(self.LINE), "该行必须含可解析链接"
+
+    def test_trailing_download_ignored_without_link(self) -> None:
+        plugin = make_plugin()
+        # 有尾随“下载”但没有链接，不应被视为直接下载（由调用方结合 has_link 判定）。
+        assert plugin._has_trailing_download_command("今晚吃啥 下载")
+        assert not plugin._extract_urls("今晚吃啥 下载")
+
+    def test_ordinary_download_prose_not_detected(self) -> None:
+        plugin = make_plugin()
+        for text in ("我想下载这个视频", "下载速度好慢", "这个下载量不错", "帮我下载"):
+            assert not plugin._has_trailing_download_command(text), text
+
+    def test_mid_line_download_not_detected(self) -> None:
+        plugin = make_plugin()
+        assert not plugin._has_trailing_download_command("下载 然后看看这个图")
+
+    def test_literal_newline_download_still_detected(self) -> None:
+        plugin = make_plugin()
+        assert plugin._has_download_command("链接 https://v.douyin.com/x/\n下载")
+
+
+class TestPendingClaimIsAtomic:
+    """领取待下载任务时必须立刻置为 downloading，避免群内多人重复领取。"""
+
+    @staticmethod
+    def pending(url: str = "https://v.douyin.com/AAA/") -> PendingDownload:
+        return PendingDownload(
+            parser=None, keyword="", searched=None, url=url,
+            reference_urls=(url,), title="A", expires_at=2_000_000_000,
+        )
+
+    def test_first_claim_marks_downloading(self) -> None:
+        plugin = make_plugin()
+        enable_advanced_parser(plugin, cross_sender_download_group_whitelist=[data.GROUP_ID])
+        message = data.reply_download_message("https://v.douyin.com/AAA/", user_id="10001")
+        owner_key = (plugin._session_id(message), "10001")
+        entry = self.pending()
+        plugin._pending_downloads[owner_key] = [entry]
+
+        consumed, _, _, _ = plugin._consume_pending_download(message, plugin._message_source(message))
+
+        assert consumed is entry
+        assert entry.delivery_state == "downloading", "领取后未锁定，第二个人还能再领一次"
+
+    def test_second_claim_is_rejected_while_downloading(self) -> None:
+        plugin = make_plugin()
+        enable_advanced_parser(plugin, cross_sender_download_group_whitelist=[data.GROUP_ID])
+        first = data.reply_download_message("https://v.douyin.com/AAA/", user_id="10001")
+        owner_key = (plugin._session_id(first), "10001")
+        plugin._pending_downloads[owner_key] = [self.pending()]
+
+        consumed, _, _, error = plugin._consume_pending_download(first, plugin._message_source(first))
+        assert consumed is not None and error is None
+
+        second = data.reply_download_message("https://v.douyin.com/AAA/", user_id="10001")
+        consumed2, _, _, error2 = plugin._consume_pending_download(second, plugin._message_source(second))
+        assert consumed2 is None
+        assert error2 == "该详情卡片的媒体正在下载，请勿重复请求。"
+
+
+class TestReferenceUrlNormalization:
+    """带查询串的分享链接：概览展示的是剥离 query 的 URL，引用匹配必须仍然成立。"""
+
+    RAW = "https://www.xiaohongshu.com/explore/68e8e3fa00000000030342ec?xsec_token=ABC%3D%3D&type=normal"
+    SHOWN = "https://www.xiaohongshu.com/explore/68e8e3fa00000000030342ec"
+
+    def test_reference_keys_include_display_url(self) -> None:
+        plugin = make_plugin()
+        keys = plugin._reference_keys(self.RAW)
+        assert self.RAW in keys
+        assert self.SHOWN in keys, "未收录规范化展示 URL，引用卡片将匹配失败"
+
+    def test_owner_quote_reply_matches_displayed_url(self) -> None:
+        plugin = make_plugin()
+        message = data.reply_download_message(self.SHOWN, user_id="10001")
+        owner_key = (plugin._session_id(message), "10001")
+        entry = PendingDownload(
+            parser=None, keyword="", searched=None, url=self.RAW,
+            reference_urls=plugin._reference_keys(self.RAW, self.RAW),
+            title="xhs", expires_at=2_000_000_000,
+        )
+        plugin._pending_downloads[owner_key] = [entry]
+
+        # 卡片里展示的是剥离 query 的 URL，用户引用它回复“下载”
+        consumed, _, _, error = plugin._consume_pending_download(message, plugin._message_source(message))
+        assert consumed is entry
+        assert error is None, f"原发送者引用自己的卡片却失败：{error}"
+
+
 class TestIsAllowedMessage:
     """黑/白名单入口检查（仅高级分组开启时生效）。"""
 

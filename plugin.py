@@ -70,8 +70,8 @@ class PluginSectionConfig(PluginConfigBase):
     __ui_order__: ClassVar[int] = 0
 
     name: str = Field(default="maibot_social_link_parser", description="插件内部名称", json_schema_extra=_ui("插件内部名称", "仅用于标识配置；通常无需修改。", 0, label_en="Internal name", hint_en="Used only to identify this configuration. Usually leave unchanged.", label_ja="内部名", hint_ja="設定識別用です。通常は変更不要です。", disabled=True))
-    config_version: str = Field(default="0.3.4", description="配置文件版本", json_schema_extra=_ui("配置版本", "由插件用于补齐配置字段，请勿手动修改。", 1, label_en="Configuration version", hint_en="Used to merge configuration fields. Do not edit manually.", label_ja="設定バージョン", hint_ja="設定項目の統合に使用します。手動で変更しないでください。", disabled=True))
-    version: str = Field(default="0.3.4", description="插件版本", json_schema_extra=_ui("插件版本", "当前插件版本，仅供查看。", 2, label_en="Plugin version", hint_en="Current plugin version. Read only.", label_ja="プラグインバージョン", hint_ja="現在のプラグインバージョンです。読み取り専用です。", disabled=True))
+    config_version: str = Field(default="0.3.8", description="配置文件版本", json_schema_extra=_ui("配置版本", "由插件用于补齐配置字段，请勿手动修改。", 1, label_en="Configuration version", hint_en="Used to merge configuration fields. Do not edit manually.", label_ja="設定バージョン", hint_ja="設定項目の統合に使用します。手動で変更しないでください。", disabled=True))
+    version: str = Field(default="0.3.8", description="插件版本", json_schema_extra=_ui("插件版本", "当前插件版本，仅供查看。", 2, label_en="Plugin version", hint_en="Current plugin version. Read only.", label_ja="プラグインバージョン", hint_ja="現在のプラグインバージョンです。読み取り専用です。", disabled=True))
     enabled: bool = Field(default=True, description="是否启用插件", json_schema_extra=_ui("启用插件", "关闭后不再识别或处理社媒链接。", 3, label_en="Enable plugin", hint_en="When disabled, social media links are not detected or handled.", label_ja="プラグインを有効化", hint_ja="無効時はソーシャルメディアのリンクを処理しません。"))
     dry_run: bool = Field(default=False, description="演练模式", json_schema_extra=_ui("演练模式", "不向 QQ/NapCat 发送任何消息，仅记录拟发送内容；仍会下载媒体，可能消耗流量和磁盘。", 4, label_en="Dry run", hint_en="Prevents all QQ/NapCat sends and logs intended output. Downloads still run and use bandwidth and disk.", label_ja="ドライラン", hint_ja="QQ/NapCat への送信を行わず、送信予定をログに出します。ダウンロードは実行されます。"))
 
@@ -327,14 +327,19 @@ class MultiPlatformParserPlugin(MaiBotPlugin):
         own_source = self._strip_bot_download_hint(self._message_source(message, include_reply=False))
         session_id = self._session_id(message)
         sender_id = self._get_user_id(message)
-        is_download_intent = self._has_download_command(own_source)
+        standalone_download = self._has_download_command(own_source)
+        has_link = bool(self._extract_urls(own_source))
         # A link and a download intent in the same message is an explicit direct-download
         # request, not a confirmation for an older pending item in this conversation.
-        direct_download = is_download_intent and bool(self._extract_urls(own_source))
-        if is_download_intent and not direct_download:
+        # The trailing check also accepts share text that glues “下载” to the end of the
+        # link line without a newline; it only applies when the message really carries a
+        # link, so ordinary prose containing “下载” still passes through untouched.
+        direct_download = has_link and (
+            standalone_download or self._has_trailing_download_command(own_source)
+        )
+        if standalone_download and not direct_download:
             pending, choices, queue_size, error = self._consume_pending_download(message, own_source)
             if pending is not None:
-                pending.delivery_state = "downloading"
                 await self._send_text(message, self._download_started_text(pending, queue_size))
                 self._create_task(self._download_pending_task(pending, message), "link_resolver.download")
                 return {"action": "abort"} if self.config.parser.block_ai_reply else None
@@ -515,46 +520,52 @@ class MultiPlatformParserPlugin(MaiBotPlugin):
         image_nodes: list[list[dict[str, Any]]] = []
         videos: list[VideoContent | DynamicContent] = []
 
+        # 先按原始顺序登记待发送节点（``slot`` 为图片序号，文本项为 None）。图片路径
+        # 统一交给 _resolve_gallery_paths 做两轮解析后再回填，既保持图集顺序，也避免
+        # 单张瞬时失败在结果里留下空洞。
+        plan: list[tuple[str, Any, int | None]] = []
         image_count = 0
         for content in media_items:
             if isinstance(content, TextContent):
                 if content.text:
-                    text_nodes.append([text_segment(self._truncate(content.text, self._parser_advanced().max_text_chars))])
+                    plan.append(("text", self._truncate(content.text, self._parser_advanced().max_text_chars), None))
             elif isinstance(content, GraphicsContent):
                 if content.text:
-                    image_nodes.append([text_segment(self._truncate(content.text, self._parser_advanced().max_text_chars))])
+                    plan.append(("text", self._truncate(content.text, self._parser_advanced().max_text_chars), None))
                 if self._parser_advanced().send_images and image_count < self._parser_advanced().max_images:
                     image_count += 1
-                    image_slot = image_count
-                    try:
-                        path = await content.get_path()
-                    except Exception as exc:
-                        self.ctx.logger.warning("Graphic %s download failed after retries: %s", image_slot, exc)
-                        image_nodes.append([text_segment(f"第 {image_slot} 张图片下载失败，已跳过。")])
-                    else:
-                        image_nodes.append([image_segment(path)])
+                    plan.append(("image", content, image_count))
             elif isinstance(content, ImageContent):
                 if self._parser_advanced().send_images and image_count < self._parser_advanced().max_images:
                     image_count += 1
-                    image_slot = image_count
-                    try:
-                        path = await content.get_path()
-                    except Exception as exc:
-                        self.ctx.logger.warning("Image %s download failed after retries: %s", image_slot, exc)
-                        image_nodes.append([text_segment(f"第 {image_slot} 张图片下载失败，已跳过。")])
-                    else:
-                        image_nodes.append([image_segment(path)])
+                    plan.append(("image", content, image_count))
             elif isinstance(content, (VideoContent, DynamicContent)):
                 videos.append(content)
 
+        resolved = await self._resolve_gallery_paths([(slot, content) for _, content, slot in plan if slot])
+        for kind, payload, slot in plan:
+            if kind == "text":
+                text_nodes.append([text_segment(payload)])
+            elif slot is not None and slot in resolved:
+                image_nodes.append([image_segment(resolved[slot])])
+            else:
+                self.ctx.logger.warning("Image %s unavailable after retries; sending placeholder", slot)
+                image_nodes.append([text_segment(f"第 {slot} 张图片下载失败，已跳过。")])
+
         nodes = text_nodes + image_nodes
-        sent_forward = False
         all_sent = True
         if self._parser_advanced().use_forward_for_multi and len(nodes) > 1:
             forward_mode = "http" if self._parser_advanced().gallery_delivery_mode == "http_forward" else None
             sent_forward = await self._send_group_forward(message, nodes, delivery_mode=forward_mode)
-
-        if not sent_forward:
+            # 合并转发已带内部重试。一旦发起就不再回退逐条发送：回退会在"转发其实已投递、
+            # 只是返回值不可靠"时把同一图集再发一遍，造成"合并 + 逐张"双份刷屏。
+            if not sent_forward:
+                self.ctx.logger.warning(
+                    "Merged forward reported failure but is not retried per-image to avoid duplicates: session=%s nodes=%s",
+                    self._session_id(message),
+                    len(nodes),
+                )
+        else:
             if header:
                 all_sent = await self._send_text(message, header) and all_sent
             for node in image_nodes:
@@ -574,6 +585,41 @@ class MultiPlatformParserPlugin(MaiBotPlugin):
                     continue
                 all_sent = await self._send_video(message, path) and all_sent
         return all_sent
+
+    async def _resolve_gallery_paths(self, items: list[tuple[int, Any]]) -> dict[int, Path]:
+        """两轮解析图集本地路径，避免"1/2/4/5 成功、3 失败"的残缺图集。
+
+        第一轮并发尝试全部图片；对失败项，第二轮用 ``retry_path`` 经下载任务工厂
+        重新发起下载（下载器会保留 ``.part`` 并按 Range 续传），把瞬时失败的图片尽量
+        补齐。只有两轮都失败的槽位才留占位符。
+        """
+        resolved: dict[int, Path] = {}
+        if not items:
+            return resolved
+
+        first_pass = await asyncio.gather(
+            *(content.get_path() for _, content in items), return_exceptions=True
+        )
+        retry_targets: list[tuple[int, Any]] = []
+        for (slot, content), outcome in zip(items, first_pass):
+            if isinstance(outcome, BaseException):
+                self.ctx.logger.warning("Image %s download failed, will retry: %s", slot, outcome)
+                retry_targets.append((slot, content))
+            else:
+                resolved[slot] = outcome
+
+        if not retry_targets:
+            return resolved
+        self.ctx.logger.info("Retrying %s failed gallery item(s): %s", len(retry_targets), [s for s, _ in retry_targets])
+        second_pass = await asyncio.gather(
+            *(content.retry_path() for _, content in retry_targets), return_exceptions=True
+        )
+        for (slot, _content), outcome in zip(retry_targets, second_pass):
+            if isinstance(outcome, BaseException):
+                self.ctx.logger.warning("Image %s still failing after retry: %s", slot, outcome)
+            else:
+                resolved[slot] = outcome
+        return resolved
 
     async def _send_media_in_order(self, message: dict[str, Any], media_items: list[Any], header: str) -> bool:
         """Send mixed galleries in source order; merged forwards cannot carry videos."""
@@ -903,13 +949,35 @@ class MultiPlatformParserPlugin(MaiBotPlugin):
             keyword=keyword,
             searched=searched,
             url=url,
-            reference_urls=tuple(dict.fromkeys(item for item in (url, result_url) if item)),
+            reference_urls=self._reference_keys(url, result_url),
             title=self._truncate(title or "未命名内容", 40),
             expires_at=time.time() + self._parser_advanced().pending_download_ttl_seconds,
         )
         entries = [entry for entry in self._pending_downloads.get(key, []) if entry.expires_at >= time.time() and entry.url != url]
         entries.append(pending)
         self._pending_downloads[key] = entries
+
+    def _reference_keys(self, *urls: str | None) -> tuple[str, ...]:
+        """待下载任务的引用键：同时收录原始 URL 与展示用 URL（已剥离 query）。
+
+        概览卡片展示的是 ``_display_url`` 去掉查询参数后的链接，而任务保存的是
+        原始分享链接。若只存原始链接，引用回复时从卡片文本解析出的规范化链接
+        将与其无交集，导致连原发送者引用自己的卡片都判定为“不属于你”。因此
+        两边都收录，匹配时任一形式命中即可。
+        """
+        keys: list[str] = []
+        for raw in urls:
+            if not raw:
+                continue
+            for candidate in (str(raw), self._display_url(str(raw))):
+                if candidate and candidate not in keys:
+                    keys.append(candidate)
+        return tuple(keys)
+
+    def _claim_pending(self, entry: PendingDownload) -> PendingDownload:
+        """领取待下载任务：立即置为下载中，避免并发/多成员重复领取。"""
+        entry.delivery_state = "downloading"
+        return entry
 
     def _consume_pending_download(
         self, message: dict[str, Any], source: str
@@ -924,7 +992,7 @@ class MultiPlatformParserPlugin(MaiBotPlugin):
             for entry in self._pending_downloads.get(key, [])
             if entry.expires_at >= time.time() and self._is_allowed_link_sender(sender_id)
         ]
-        reply_urls = self._reply_urls(message)
+        reply_urls = set(self._reply_urls(message))
 
         # A QQ reply contains the referenced bot message preview. Only consume the
         # pending entry whose original or resolved URL is present in that preview.
@@ -952,7 +1020,7 @@ class MultiPlatformParserPlugin(MaiBotPlugin):
                     return None, [], 0, "该详情卡片的媒体已成功发送，无需重复下载。"
                 if pending.delivery_state == "downloading":
                     return None, [], 0, "该详情卡片的媒体正在下载，请勿重复请求。"
-                return pending, [], matched_queue_size, None
+                return self._claim_pending(pending), [], matched_queue_size, None
             if not matched:
                 if not self._is_allowed_link_sender(sender_id) and any(
                     set(entry.reference_urls).intersection(reply_urls)
@@ -974,7 +1042,7 @@ class MultiPlatformParserPlugin(MaiBotPlugin):
                     self._pending_downloads[key] = entries
                 else:
                     self._pending_downloads.pop(key, None)
-                return pending, [], len(entries) + 1, None
+                return self._claim_pending(pending), [], len(entries) + 1, None
 
         matched = [entry for entry in entries if entry.url in source]
         if len(matched) == 1:
@@ -984,17 +1052,18 @@ class MultiPlatformParserPlugin(MaiBotPlugin):
                 self._pending_downloads[key] = entries
             else:
                 self._pending_downloads.pop(key, None)
-            return pending, [], len(entries) + 1, None
+            return self._claim_pending(pending), [], len(entries) + 1, None
         if len(entries) == 1:
+            pending = entries[0]
             self._pending_downloads.pop(key, None)
-            return entries[0], [], 1, None
+            return self._claim_pending(pending), [], 1, None
         if self._parser_advanced().pending_download_selection == "latest":
             pending = entries.pop()
             if entries:
                 self._pending_downloads[key] = entries
             else:
                 self._pending_downloads.pop(key, None)
-            return pending, [], len(entries) + 1, None
+            return self._claim_pending(pending), [], len(entries) + 1, None
         self._pending_downloads[key] = entries
         return None, entries, len(entries), None
 
@@ -1005,7 +1074,7 @@ class MultiPlatformParserPlugin(MaiBotPlugin):
                 continue
             data = segment.get("data")
             if isinstance(data, dict):
-                urls.update(self._urls_from_payload(data.get("target_message_content", "")))
+                urls.update(self._reference_keys(*self._urls_from_payload(data.get("target_message_content", ""))))
         return urls
 
     def _can_download_for_others(self, message: dict[str, Any]) -> bool:
@@ -1043,6 +1112,16 @@ class MultiPlatformParserPlugin(MaiBotPlugin):
     def _has_download_command(self, text: str) -> bool:
         """消息中是否有独立一行的下载命令，而非普通语句中的“下载”字样。"""
         return any(self._is_download_confirmation(line) for line in text.splitlines() if line.strip())
+
+    def _has_trailing_download_command(self, text: str) -> bool:
+        """链接行以“下载”结尾（分享文案常把“下载”直接粘在链接同行的末尾）。
+
+        仅匹配“行尾的独立下载词”，因此“看看下载量”“下载速度慢”这类普通语句
+        不会命中；真正带链接的分享文本（``...<url> ... 下载``）才会识别为直接下载。
+        调用方需先确认消息里确实存在可解析链接，避免纯文本误触发。
+        """
+        pattern = re.compile(rf"(?:^|\s){self._download_intent_pattern()}\s*(?:\d+)?\s*$")
+        return any(pattern.search(line) for line in text.splitlines() if line.strip())
 
     @staticmethod
     def _has_reply(message: dict[str, Any]) -> bool:

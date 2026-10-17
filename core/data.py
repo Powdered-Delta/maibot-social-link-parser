@@ -1,6 +1,6 @@
 import hashlib
 from asyncio import Task, create_task
-from collections.abc import Coroutine
+from collections.abc import Callable, Coroutine
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -26,6 +26,20 @@ class MediaContent:
             self.path_task = create_task(self.path_task)
         self.path_task = await self.path_task
         return self.path_task
+
+    async def retry_path(self) -> Path:
+        """失败后的二次尝试：用 ``reload`` 工厂重建下载任务后再取路径。
+
+        ``get_path`` 首次失败后 ``path_task`` 已定格为失败的 Task，再次 await 只会
+        重放同一个异常。图集只要有一张瞬时失败就会留下空洞，因此这里用解析时保存
+        的工厂重新发起一次下载（配合下载器保留的 ``.part`` 可续传），尽量补齐。
+        没有工厂时退回原路径重取。
+        """
+        reload_factory = getattr(self, "reload", None)
+        if reload_factory is None:
+            return await self.get_path()
+        self.path_task = reload_factory()
+        return await self.get_path()
 
     def __repr__(self) -> str:
         prefix = self.__class__.__name__
@@ -83,7 +97,8 @@ class VideoContent(MediaContent):
 class ImageContent(MediaContent):
     """图片内容"""
 
-    pass
+    reload: Callable[[], Any] | None = None
+    """失败重试用的下载任务工厂（由解析器在创建时注入）"""
 
 
 @dataclass(repr=False, slots=True, init=False)
@@ -118,6 +133,8 @@ class GraphicsContent(MediaContent):
     """图片前的文本内容"""
     alt: str | None = None
     """图片描述 渲染时居中显示"""
+    reload: Callable[[], Any] | None = None
+    """失败重试用的下载任务工厂（由解析器在创建时注入）"""
 
     def __repr__(self) -> str:
         repr = f"GraphicsContent(path={repr_path_task(self.path_task)}"

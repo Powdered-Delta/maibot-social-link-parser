@@ -18,4 +18,13 @@ if PACKAGE_NAME not in sys.modules:
     package.__path__ = [str(REPO_ROOT)]
     sys.modules[PACKAGE_NAME] = package
 
-sys.modules.setdefault("plugin", import_module(f"{PACKAGE_NAME}.plugin"))
+# The adapter module imports maibot_sdk, which is only present inside the MaiBot
+# Runner. Importing it eagerly broke collection of SDK-free tests (e.g. the
+# ffmpeg bootstrap tests) on a plain checkout, so only load it when available
+# and let the SDK-dependent tests skip themselves via importorskip.
+try:
+    import_module("maibot_sdk")
+except ModuleNotFoundError:
+    pass
+else:
+    sys.modules.setdefault("plugin", import_module(f"{PACKAGE_NAME}.plugin"))
