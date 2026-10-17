@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import logging
+import random
 import urllib.parse
 import urllib.request
 from pathlib import Path
@@ -13,6 +14,12 @@ from typing import Any
 import aiohttp
 
 logger = logging.getLogger("plugin.maibot_social_link_parser.sender")
+
+# Transient send failures (connection reset, timeout, 5xx) are retried with a
+# small backoff so a single hiccup does not silently drop media. Bounded and
+# only for transport/5xx errors: a definitive 4xx is surfaced immediately.
+SEND_RETRY_TIMES = 2
+SEND_RETRY_BACKOFF = 0.8
 
 
 class ApiSettings:
@@ -23,6 +30,32 @@ class ApiSettings:
 
 
 MessageSegment = dict[str, Any]
+
+
+async def _with_retry(send: Any, *, label: str) -> bool:
+    """Run an async send callable, retrying transient failures with backoff.
+
+    Retries are bounded and only applied to exceptions; callers are responsible
+    for not raising on definitive (non-retryable) failures.
+    """
+    for attempt in range(SEND_RETRY_TIMES + 1):
+        try:
+            return bool(await send())
+        except Exception as exc:
+            if attempt >= SEND_RETRY_TIMES:
+                logger.error("%s failed after retries: %s", label, exc)
+                return False
+            delay = SEND_RETRY_BACKOFF * (2**attempt) + random.uniform(0, 0.2)
+            logger.warning(
+                "%s failed, retrying in %ss (%s/%s): %s",
+                label,
+                round(delay, 1),
+                attempt + 1,
+                SEND_RETRY_TIMES,
+                exc,
+            )
+            await asyncio.sleep(delay)
+    return False
 
 
 async def send_text(ctx: Any, message: dict[str, Any], text: str, delivery_mode: str, api: ApiSettings) -> bool:
@@ -70,22 +103,18 @@ async def send_overview_hybrid(
     if not stream_id:
         logger.error("Cannot send hybrid overview: missing session_id")
         return False
-    try:
+    segments = [
+        {"type": "text", "content": f"{header}\n\n"},
+        {"type": "imageurl", "data": {"type": "imageurl", "data": {"url": preview_url}}},
+        {"type": "text", "content": f"\n{prompt}"},
+    ]
+
+    async def send():
         # Unknown Host segment types become DictComponent. The nested shape is
         # the custom component payload recognized by the NapCat adapter.
-        result = await ctx.send.hybrid(
-            [
-                {"type": "text", "content": f"{header}\n\n"},
-                {"type": "imageurl", "data": {"type": "imageurl", "data": {"url": preview_url}}},
-                {"type": "text", "content": f"\n{prompt}"},
-            ],
-            stream_id,
-            sync_to_maisaka_history=True,
-        )
-    except Exception as exc:
-        logger.error("NapCat WebSocket hybrid overview send failed: %s", exc)
-        return False
-    return bool(result)
+        return await ctx.send.hybrid(segments, stream_id, sync_to_maisaka_history=True)
+
+    return await _with_retry(send, label="NapCat WebSocket hybrid overview send")
 
 
 async def send_emoji_reaction(message_id: str | int, emoji_id: int, api: ApiSettings) -> bool:
@@ -171,12 +200,11 @@ async def _send_forward_via_gateway(ctx: Any, message: dict[str, Any], nodes: li
 
     if not messages:
         return True
-    try:
-        result = await ctx.send.forward(messages, stream_id, sync_to_maisaka_history=True)
-    except Exception as exc:
-        logger.error("NapCat WebSocket merged-forward send failed: %s", exc)
-        return False
-    return bool(result)
+
+    async def send():
+        return await ctx.send.forward(messages, stream_id, sync_to_maisaka_history=True)
+
+    return await _with_retry(send, label="NapCat WebSocket merged-forward send")
 
 
 async def _send_via_gateway(ctx: Any, message: dict[str, Any], custom_type: str, data: Any) -> bool:
@@ -185,21 +213,19 @@ async def _send_via_gateway(ctx: Any, message: dict[str, Any], custom_type: str,
     if not stream_id:
         logger.error("Cannot send through gateway: missing session_id")
         return False
-    try:
+
+    async def send():
         if custom_type == "text":
-            result = await ctx.send.text(data, stream_id, sync_to_maisaka_history=True)
-        else:
-            result = await ctx.send.custom(
-                custom_type,
-                data,
-                stream_id,
-                sync_to_maisaka_history=True,
-                timeout_ms=300_000 if custom_type == "videourl" else 120_000,
-            )
-    except Exception as exc:
-        logger.error("NapCat WebSocket gateway send failed: %s", exc)
-        return False
-    return bool(result)
+            return await ctx.send.text(data, stream_id, sync_to_maisaka_history=True)
+        return await ctx.send.custom(
+            custom_type,
+            data,
+            stream_id,
+            sync_to_maisaka_history=True,
+            timeout_ms=300_000 if custom_type == "videourl" else 120_000,
+        )
+
+    return await _with_retry(send, label=f"NapCat WebSocket {custom_type} send")
 
 
 def text_segment(text: str) -> MessageSegment:
@@ -236,33 +262,42 @@ async def _send_message(
 
 
 async def _post_onebot(url: str, payload: dict[str, Any], api: ApiSettings, *, timeout: int) -> bool:
+    return await _with_retry(
+        lambda: _post_onebot_once(url, payload, api, timeout=timeout),
+        label="OneBot request",
+    )
+
+
+async def _post_onebot_once(url: str, payload: dict[str, Any], api: ApiSettings, *, timeout: int) -> bool:
     token = str(getattr(api, "token", "") or "").strip()
     headers = {}
     if token:
         headers["Authorization"] = f"Bearer {token}"
 
-    try:
-        async with aiohttp.ClientSession() as session:
-            async with session.post(url, json=payload, headers=headers, timeout=timeout) as response:
-                if response.status == 200:
-                    return True
+    async with aiohttp.ClientSession() as session:
+        async with session.post(url, json=payload, headers=headers, timeout=timeout) as response:
+            if response.status == 200:
+                return True
 
-                if response.status in (401, 403) and token:
-                    retry_url = f"{url}?access_token={urllib.parse.quote(token)}"
-                    async with session.post(retry_url, json=payload, headers=headers, timeout=timeout) as retry:
-                        if retry.status == 200:
-                            return True
-                        logger.error("OneBot retry failed: HTTP %s %s", retry.status, await retry.text())
-                        return False
+            if response.status in (401, 403) and token:
+                retry_url = f"{url}?access_token={urllib.parse.quote(token)}"
+                async with session.post(retry_url, json=payload, headers=headers, timeout=timeout) as retry:
+                    if retry.status == 200:
+                        return True
+                    logger.error("OneBot retry failed: HTTP %s %s", retry.status, await retry.text())
+                    return False
 
-                logger.error("OneBot request failed: HTTP %s %s", response.status, await response.text())
-                return False
-    except asyncio.TimeoutError:
-        logger.error("OneBot request timed out: %s", url)
-        return False
-    except Exception as exc:
-        logger.error("OneBot request error: %s", exc)
-        return False
+            if response.status >= 500:
+                # Server-side hiccup is transient; raise so _with_retry retries.
+                raise aiohttp.ClientResponseError(
+                    response.request_info,
+                    response.history,
+                    status=response.status,
+                    message=response.reason,
+                )
+
+            logger.error("OneBot request failed: HTTP %s %s", response.status, await response.text())
+            return False
 
 
 def _file_uri(path: Path) -> str:

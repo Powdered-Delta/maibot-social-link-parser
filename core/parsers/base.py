@@ -10,6 +10,8 @@ from typing import TYPE_CHECKING, Any, ClassVar, TypeVar, cast
 from aiohttp import ClientError, ClientSession, ClientTimeout
 from typing_extensions import Unpack
 
+from astrbot.api import logger
+
 from ..config import ParserItem, PluginConfig
 from ..constants import ANDROID_HEADER, COMMON_HEADER, IOS_HEADER
 from ..data import (
@@ -142,7 +144,29 @@ class BaseParser:
         Raises:
             ParseException: 解析失败时抛出
         """
-        return await self._handlers[keyword](self, searched)
+        handler = self._handlers[keyword]
+        retries = self.cfg.download_retry_times
+        for attempt in range(retries + 1):
+            try:
+                return await handler(self, searched)
+            except (ClientError, TimeoutError) as exc:
+                # Transient transport failures (RST, timeout, incomplete read) are
+                # retried here so a single network hiccup does not surface as a
+                # parse failure. Definitive ParseException paths are not retried.
+                if attempt < retries:
+                    delay = 1 + attempt
+                    logger.warning(
+                        "解析请求中断，%s 秒后重试 (%s/%s) | keyword: %s, error: %s",
+                        delay,
+                        attempt + 1,
+                        retries,
+                        keyword,
+                        exc,
+                    )
+                    await sleep(delay)
+                    continue
+                raise
+        raise ParseException(f"解析请求失败: {keyword}")
 
     async def parse_with_redirect(
         self,
@@ -286,11 +310,20 @@ class BaseParser:
         """创建图片内容列表"""
         contents: list[ImageContent] = []
         for url in image_urls:
-            task = self.downloader.download_img.__wrapped__(self.downloader,
-                url, headers=headers or self.headers, proxy=self.proxy
-            )
-            contents.append(ImageContent(task))
+            contents.append(self._create_image_content(url, headers))
         return contents
+
+    def _create_image_content(self, url: str, headers: dict[str, str] | None = None) -> ImageContent:
+        """构造单张图片内容，并挂上失败重试用的下载任务工厂。"""
+        request_headers = headers or self.headers
+        proxy = self.proxy
+
+        def download():
+            return self.downloader.download_img.__wrapped__(
+                self.downloader, url, headers=request_headers, proxy=proxy
+            )
+
+        return ImageContent(download(), reload=download)
 
     def create_dynamic_contents(
         self,
@@ -328,10 +361,15 @@ class BaseParser:
         headers: dict[str, str] | None = None,
     ):
         """创建图文内容 图片不能为空 文字可空 渲染时文字在前 图片在后"""
-        image_task = self.downloader.download_img.__wrapped__(self.downloader,
-            image_url, headers=headers or self.headers, proxy=self.proxy
-        )
-        return GraphicsContent(image_task, text, alt)
+        request_headers = headers or self.headers
+        proxy = self.proxy
+
+        def download():
+            return self.downloader.download_img.__wrapped__(
+                self.downloader, image_url, headers=request_headers, proxy=proxy
+            )
+
+        return GraphicsContent(download(), text, alt, reload=download)
 
     def create_file_content(
         self,

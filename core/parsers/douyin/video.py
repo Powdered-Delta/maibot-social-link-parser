@@ -1,9 +1,24 @@
-from random import choice
 from typing import Any
 
 from msgspec import Struct, field
 
 from ..base import ParseException
+
+
+def _prefer_url(url_list: list[str], default: str = "") -> str:
+    """Pick a stable, usable URL from a CDN list.
+
+    Douyin returns several CDN mirrors per asset. Random selection made
+    downloads non-deterministic and could pick a stale mirror, so prefer the
+    first https entry (falling back to the first entry of any scheme).
+    """
+    for candidate in url_list:
+        if isinstance(candidate, str) and candidate.startswith("https://"):
+            return candidate
+    for candidate in url_list:
+        if isinstance(candidate, str) and candidate:
+            return candidate
+    return default
 
 
 class Avatar(Struct):
@@ -44,22 +59,25 @@ class VideoData(Struct):
 
     @property
     def image_urls(self) -> list[str]:
-        return [choice(image.url_list) for image in self.images] if self.images else []
+        return [_prefer_url(image.url_list) for image in self.images if image.url_list] if self.images else []
 
     @property
     def video_url(self) -> str | None:
-        return choice(self.video.play_addr.url_list).replace("playwm", "play") if self.video else None
+        if not self.video or not (url := _prefer_url(self.video.play_addr.url_list)):
+            return None
+        # 'playwm' is the watermarked variant; 'play' serves the clean stream.
+        return url.replace("playwm", "play")
 
     @property
     def cover_url(self) -> str | None:
-        return choice(self.video.cover.url_list) if self.video else None
+        return _prefer_url(self.video.cover.url_list) or None if self.video else None
 
     @property
     def avatar_url(self) -> str | None:
         if avatar := self.author.avatar_thumb:
-            return choice(avatar.url_list)
+            return _prefer_url(avatar.url_list) or None
         elif avatar := self.author.avatar_medium:
-            return choice(avatar.url_list)
+            return _prefer_url(avatar.url_list) or None
         return None
 
 
@@ -70,7 +88,7 @@ class VideoInfoRes(Struct):
     def video_data(self) -> VideoData:
         if len(self.item_list) == 0:
             raise ParseException("can't find data in videoInfoRes")
-        return choice(self.item_list)
+        return self.item_list[0]
 
 
 class VideoOrNotePage(Struct):

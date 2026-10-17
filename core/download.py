@@ -5,6 +5,7 @@ from functools import wraps
 from pathlib import Path
 from typing import Any, ParamSpec, TypeVar
 
+import random
 import aiofiles
 import yt_dlp
 from aiohttp import ClientError, ClientSession, ClientTimeout
@@ -182,9 +183,21 @@ class Downloader:
                 raise
             except (ClientError, TimeoutError, OSError) as exc:
                 if attempt < retries:
-                    await sleep(2**attempt)
+                    # Keep the partial file so the next attempt can resume with a
+                    # Range request instead of re-downloading from scratch.
+                    delay = 2**attempt + random.uniform(0, 0.5)
+                    logger.warning(
+                        "下载中断，%s 秒后重试 (%s/%s) | url: %s, error: %s",
+                        round(delay, 1),
+                        attempt + 1,
+                        retries,
+                        url,
+                        exc,
+                    )
+                    await sleep(delay)
                     continue
-                await safe_unlink(part_path)
+                # Retain .part on final transient failure: a later confirmation can
+                # resume from the retained bytes rather than discarding progress.
                 logger.exception(f"下载失败 | url: {url}, file_path: {file_path}")
                 raise DownloadException("媒体下载失败") from exc
         raise DownloadException("媒体下载失败")

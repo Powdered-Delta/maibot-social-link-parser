@@ -1,6 +1,6 @@
-from random import choice
-
 from msgspec import Struct, field
+
+from .video import _prefer_url
 
 
 class PlayAddr(Struct):
@@ -44,15 +44,19 @@ class SlidesData(Struct):
 
     @property
     def avatar_url(self) -> str:
-        return choice(self.author.avatar_thumb.url_list)
+        return _prefer_url(self.author.avatar_thumb.url_list)
 
     @property
     def image_urls(self) -> list[str]:
-        return [choice(image.url_list) for image in self.images]
+        return [_prefer_url(image.url_list) for image in self.images if image.url_list]
 
     @property
     def dynamic_urls(self) -> list[str]:
-        return [choice(image.video.play_addr.url_list) for image in self.images if image.video]
+        return [
+            _prefer_url(image.video.play_addr.url_list)
+            for image in self.images
+            if image.video and image.video.play_addr.url_list
+        ]
 
 
 class SlidesInfo(Struct):

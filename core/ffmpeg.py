@@ -4,10 +4,13 @@ import platform
 import shutil
 import tarfile
 import tempfile
+import urllib.error
 import urllib.request
 import zipfile
 from pathlib import Path
 from typing import Final
+
+DOWNLOAD_RETRY_TIMES: Final[int] = 3
 
 from astrbot.api import logger
 
@@ -159,9 +162,26 @@ def _download_to(url: str, dest: Path) -> None:
     request = urllib.request.Request(
         url, headers={"User-Agent": "maibot-social-link-parser/ffmpeg-bootstrap"}
     )
-    with urllib.request.urlopen(request, timeout=120) as response:
-        with dest.open("wb") as file:
-            shutil.copyfileobj(response, file)
+    last_error: Exception | None = None
+    for attempt in range(DOWNLOAD_RETRY_TIMES):
+        try:
+            with urllib.request.urlopen(request, timeout=120) as response:
+                with dest.open("wb") as file:
+                    shutil.copyfileobj(response, file)
+            return
+        except (urllib.error.URLError, OSError) as exc:
+            # A truncated download leaves a partial file; remove it before retrying
+            # so the next attempt does not append to corrupt bytes.
+            last_error = exc
+            dest.unlink(missing_ok=True)
+            if attempt + 1 < DOWNLOAD_RETRY_TIMES:
+                logger.warning(
+                    "ffmpeg 自举下载中断，重试 (%s/%s): %s",
+                    attempt + 1,
+                    DOWNLOAD_RETRY_TIMES,
+                    exc,
+                )
+    raise last_error if last_error is not None else RuntimeError("ffmpeg 下载失败")
 
 
 def _extract_binary(archive_path: Path, target_dir: Path, binary_name: str) -> Path | None:
