@@ -53,21 +53,13 @@ class PluginConfig:
         xiaoheihe_show_body_text: bool = True,
         use_proxy_platforms: list[str] | None = None,
     ):
-        self.whitelist: list[str] = []
-        self.blacklist: list[str] = []
-        self.arbiter = False
         self.debounce_interval = debounce_interval
         self.source_max_size = source_max_size
         self.source_max_minute = source_max_minute
-        self.audio_to_file = True
-        self.single_heavy_render_card = False
-        self.forward_threshold = 4
-        self.show_download_fail_tip = True
         self.download_timeout = download_timeout
         self.download_retry_times = download_retry_times
         self.common_timeout = common_timeout
         self.proxy = proxy or None
-        self.clean_cron = ""
 
         self.max_duration = source_max_minute * 60
         self.max_size = source_max_size * 1024 * 1024
@@ -111,11 +103,3 @@ class PluginConfig:
                 ),
             ]
         )
-
-    def add_blacklist(self, umo: str) -> None:
-        if umo not in self.blacklist:
-            self.blacklist.append(umo)
-
-    def remove_blacklist(self, umo: str) -> None:
-        if umo in self.blacklist:
-            self.blacklist.remove(umo)
