@@ -185,3 +185,62 @@ class TestSendRetry:
 
         assert asyncio.run(sender._with_retry(always_fail, label="test")) is False
         assert attempts["count"] == sender.SEND_RETRY_TIMES + 1
+
+
+class TestForwardImageSharing:
+    """合并转发不应 base64 内联整包图集：那会把几十 MB 压进一帧导致整单失败。
+
+    真机事故：7 节点图集 1.75MB 图片 → base64 ≈2.35MB 单帧，Platform IO 直接
+    DeliveryStatus.FAILED（error 为空），QQ 侧表现为“图片已过期”。
+    """
+
+    def test_shared_root_child_is_shadowable(self) -> None:
+        from maibot_social_link_parser import sender
+
+        # 共享根下的路径应被识别为 NapCat 可读，无需 base64。
+        # 返回值统一成 POSIX 形式（Linux 容器内即原生路径）。
+        assert (
+            sender._shared_path_for(Path(sender.SHARED_DATA_ROOT) / "a.webp")
+            == f"{sender.SHARED_DATA_ROOT}/a.webp"
+        )
+
+    def test_shared_root_itself_is_accepted(self) -> None:
+        from maibot_social_link_parser import sender
+
+        assert sender._shared_path_for(Path(sender.SHARED_DATA_ROOT)) == sender.SHARED_DATA_ROOT
+
+    def test_sibling_prefix_is_not_shared(self, tmp_path: Path) -> None:
+        """`/MaiMBot/data/pluginsX` 不能因为前缀相同被误判为共享卷内。"""
+        from maibot_social_link_parser import sender
+
+        lookalike = Path(sender.SHARED_DATA_ROOT + "X") / "a.webp"
+        assert sender._shared_path_for(lookalike) is None
+
+    def test_path_outside_shared_root_is_not_shared(self, tmp_path: Path) -> None:
+        from maibot_social_link_parser import sender
+
+        assert sender._shared_path_for(tmp_path / "a.webp") is None
+
+    def test_small_image_inlined_when_outside_shared_root(self, tmp_path: Path) -> None:
+        from maibot_social_link_parser import sender
+
+        image = tmp_path / "small.webp"
+        image.write_bytes(b"x" * 1024)
+        segment = sender._forward_image_segment(image)
+        assert segment is not None
+        assert segment["type"] == "image"
+        # 非共享路径且体积小 → 回退内联
+        assert len(segment["content"]) > 0
+
+    def test_oversized_image_outside_shared_root_is_skipped(self, tmp_path: Path) -> None:
+        from maibot_social_link_parser import sender
+
+        image = tmp_path / "huge.webp"
+        image.write_bytes(b"x" * (sender.INLINE_IMAGE_MAX_BYTES + 1))
+        # 超限时宁可不发这一张，也不要撑爆整帧导致整单失败
+        assert sender._forward_image_segment(image) is None
+
+    def test_missing_image_is_skipped(self, tmp_path: Path) -> None:
+        from maibot_social_link_parser import sender
+
+        assert sender._forward_image_segment(tmp_path / "nope.webp") is None

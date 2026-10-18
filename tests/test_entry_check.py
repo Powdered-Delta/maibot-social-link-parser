@@ -7,6 +7,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 maibot_sdk = pytest.importorskip("maibot_sdk")
@@ -137,6 +139,51 @@ class TestReferenceUrlNormalization:
         consumed, _, _, error = plugin._consume_pending_download(message, plugin._message_source(message))
         assert consumed is entry
         assert error is None, f"原发送者引用自己的卡片却失败：{error}"
+
+
+class TestResendCommand:
+    """“重发 N”：图集单张在 QQ 侧失效时，按序号补发已下载过的本地图片。"""
+
+    def test_parse_single_index(self) -> None:
+        plugin = make_plugin()
+        assert plugin._resend_targets("重发 3") == [3]
+
+    def test_parse_multiple_indexes(self) -> None:
+        plugin = make_plugin()
+        assert plugin._resend_targets("重发 1 3") == [1, 3]
+
+    def test_bare_resend_means_no_index(self) -> None:
+        plugin = make_plugin()
+        assert plugin._resend_targets("重发") == []
+
+    def test_chatter_is_not_a_command(self) -> None:
+        plugin = make_plugin()
+        for text in ("重发这个图看看", "帮我重发一下", "重发第3张"):
+            assert plugin._resend_targets(text) is None, text
+
+    def test_resend_requires_a_quoted_card(self) -> None:
+        plugin = make_plugin()
+        message = data.with_text(data.reply_download_message("https://v.douyin.com/AAA/"), "重发 1")
+        message["raw_message"] = [{"type": "text", "data": "重发 1"}]
+        handled, note = plugin._consume_resend_request(message, [1])
+        assert handled is False
+        assert note and "引用" in note
+
+    def test_resend_rejects_out_of_range_index(self) -> None:
+        plugin = make_plugin()
+        message = data.reply_download_message("https://v.douyin.com/AAA/", user_id="10001")
+        entry = PendingDownload(
+            parser=None, keyword="", searched=None, url="https://v.douyin.com/AAA/",
+            reference_urls=("https://v.douyin.com/AAA/",),
+            title="A", expires_at=2_000_000_000,
+            delivery_state="sent",
+            gallery_paths=(Path("a.webp"), Path("b.webp")),
+        )
+        plugin._pending_downloads[(plugin._session_id(message), "10001")] = [entry]
+
+        handled, note = plugin._consume_resend_request(message, [9])
+        assert handled is False
+        assert note and "1-2" in note
 
 
 class TestIsAllowedMessage:

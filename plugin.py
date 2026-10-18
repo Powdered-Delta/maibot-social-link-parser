@@ -238,6 +238,8 @@ class PendingDownload:
     title: str
     expires_at: float
     delivery_state: Literal["pending", "downloading", "sent"] = "pending"
+    gallery_paths: tuple[Path, ...] = ()
+    """成功发送过的图集本地路径，按发送顺序编号 1..N，供“重发 N”使用。"""
 
 
 class MultiPlatformParserPlugin(MaiBotPlugin):
@@ -329,6 +331,16 @@ class MultiPlatformParserPlugin(MaiBotPlugin):
         sender_id = self._get_user_id(message)
         standalone_download = self._has_download_command(own_source)
         has_link = bool(self._extract_urls(own_source))
+        # “重发 N”：只需引用 Bot 详情卡片，按序号补发已下载过的图集图片。单张
+        # 图片在 QQ 侧显示过期/加载失败时，用户不必重新下载整条链接。
+        resend_targets = self._resend_targets(own_source)
+        if resend_targets is not None and not has_link:
+            handled, note = self._consume_resend_request(message, resend_targets)
+            if handled:
+                return {"action": "abort"} if self.config.parser.block_ai_reply else None
+            if note:
+                await self._send_text(message, note)
+                return {"action": "abort"} if self.config.parser.block_ai_reply else None
         # A link and a download intent in the same message is an explicit direct-download
         # request, not a confirmation for an older pending item in this conversation.
         # The trailing check also accepts share text that glues “下载” to the end of the
@@ -399,6 +411,79 @@ class MultiPlatformParserPlugin(MaiBotPlugin):
             return {"action": "abort"}
         return None
 
+    def _consume_resend_request(self, message: dict[str, Any], targets: list[int]) -> tuple[bool, str | None]:
+        """处理“重发 N”命令，返回 (是否已处理, 需要回给用户的提示)。
+
+        必须引用 Bot 的详情卡片：只有卡片能唯一定位到那条已发送的图集，
+        仅发送“重发 3”而无引用时无法判断指的是哪一条。
+        """
+        session_id = self._session_id(message)
+        sender_id = self._get_user_id(message)
+        reply_urls = set(self._reply_urls(message))
+        if not reply_urls:
+            return False, "请引用要补发的详情卡片后再发送“重发 序号”。"
+
+        entry = self._find_sent_entry(session_id, sender_id, reply_urls)
+        if entry is None:
+            return False, "引用的详情卡片没有可补发的图片记录（可能是旧消息或已过期）。"
+        if not entry.gallery_paths:
+            return False, "这条记录没有已保存的图集图片可补发。"
+        if not targets:
+            return False, f"请指明要重发第几张，例如“重发 1”。当前共 {len(entry.gallery_paths)} 张。"
+
+        total = len(entry.gallery_paths)
+        invalid = [item for item in targets if item < 1 or item > total]
+        if invalid:
+            return False, f"序号超出范围（1-{total}）：{invalid}"
+
+        self._create_task(
+            self._resend_gallery(message, entry, targets),
+            "link_resolver.resend",
+        )
+        return True, None
+
+    def _find_sent_entry(
+        self,
+        session_id: str,
+        sender_id: str | None,
+        reply_urls: set[str],
+    ) -> "PendingDownload | None":
+        """按引用卡片里的链接定位已发送的图集记录。"""
+        for (entry_session, _owner), entries in self._pending_downloads.items():
+            if entry_session != session_id:
+                continue
+            for entry in entries:
+                if entry.delivery_state != "sent":
+                    continue
+                if not entry.gallery_paths:
+                    continue
+                if set(entry.reference_urls).intersection(reply_urls):
+                    return entry
+        return None
+
+    async def _resend_gallery(
+        self,
+        message: dict[str, Any],
+        entry: "PendingDownload",
+        targets: list[int],
+    ) -> None:
+        """按序号补发图集图片；失败项逐条回报，不影响其他序号。"""
+        total = len(entry.gallery_paths)
+        failed: list[int] = []
+        for index in dict.fromkeys(targets):
+            path = entry.gallery_paths[index - 1]
+            if not path.is_file():
+                self.ctx.logger.warning("Resend target missing on disk: index=%s path=%s", index, path)
+                failed.append(index)
+                continue
+            if not await self._send_image(message, path):
+                failed.append(index)
+        if failed:
+            await self._send_text(
+                message,
+                f"第 {'、'.join(str(item) for item in failed)} 张补发失败，本地文件可能已被清理（共 {total} 张）。",
+            )
+
     async def _process_task(
         self,
         parser: BaseParser,
@@ -416,7 +501,8 @@ class MultiPlatformParserPlugin(MaiBotPlugin):
             if self._parser_advanced().reaction_emoji_enabled and self._get_group_id(message):
                 await self._send_emoji_reaction(message.get("message_id", ""), self._parser_advanced().reaction_emoji_id)
             if self.config.parser.download_mode == "automatic" or direct_download:
-                if not await self._send_result(message, result):
+                sent_ok, _gallery = await self._send_result(message, result)
+                if not sent_ok:
                     await self._send_text(message, "原媒体下载或发送失败，请稍后重试。")
                 return
             self._store_pending_download(message, parser, keyword, searched, url, result.url, result.title)
@@ -450,11 +536,14 @@ class MultiPlatformParserPlugin(MaiBotPlugin):
             result = await pending.parser.parse(pending.keyword, pending.searched)
             if not result.url:
                 result.url = pending.url
-            if not await self._send_result(message, result, include_header=False):
+            sent_ok, gallery = await self._send_result(message, result, include_header=False)
+            if not sent_ok:
                 await self._send_text(message, "原媒体下载或发送失败，请稍后重试。")
                 pending.delivery_state = "pending"
             else:
                 pending.delivery_state = "sent"
+                # 记录已发送图集，供“重发 N”在单张丢失时按序号补发（0.3.9）。
+                pending.gallery_paths = tuple(gallery)
         except Exception as exc:
             pending.delivery_state = "pending"
             self.ctx.logger.warning("Confirmed media download failed for %s: %s", pending.url, exc)
@@ -503,7 +592,14 @@ class MultiPlatformParserPlugin(MaiBotPlugin):
         if preview is not None:
             await self._send_image(message, preview)
 
-    async def _send_result(self, message: dict[str, Any], result: ParseResult, *, include_header: bool = True) -> bool:
+    async def _send_result(
+        self,
+        message: dict[str, Any],
+        result: ParseResult,
+        *,
+        include_header: bool = True,
+    ) -> tuple[bool, list[Path]]:
+        """发送完整媒体，返回 (是否全部成功, 已发送图集图片路径按序号列表)。"""
         header = self._format_header(result) if include_header else ""
         text_nodes: list[list[dict[str, Any]]] = []
         media_items = self._flatten_contents(result)
@@ -512,7 +608,7 @@ class MultiPlatformParserPlugin(MaiBotPlugin):
         self._cancel_video_covers(media_items)
 
         if any(isinstance(content, (VideoContent, DynamicContent)) for content in media_items):
-            return await self._send_media_in_order(message, media_items, header)
+            return await self._send_media_in_order(message, media_items, header), []
 
         if header:
             text_nodes.append([text_segment(header)])
@@ -584,7 +680,9 @@ class MultiPlatformParserPlugin(MaiBotPlugin):
                     all_sent = False
                     continue
                 all_sent = await self._send_video(message, path) and all_sent
-        return all_sent
+        # 按序号回传已发送的图集图片，供“重发 N”在单张丢失时按需补发。
+        ordered_gallery = [resolved[slot] for slot in sorted(resolved)]
+        return all_sent, ordered_gallery
 
     async def _resolve_gallery_paths(self, items: list[tuple[int, Any]]) -> dict[int, Path]:
         """两轮解析图集本地路径，避免"1/2/4/5 成功、3 失败"的残缺图集。
@@ -1122,6 +1220,24 @@ class MultiPlatformParserPlugin(MaiBotPlugin):
         """
         pattern = re.compile(rf"(?:^|\s){self._download_intent_pattern()}\s*(?:\d+)?\s*$")
         return any(pattern.search(line) for line in text.splitlines() if line.strip())
+
+    @staticmethod
+    def _resend_targets(text: str) -> list[int] | None:
+        """解析“重发 N” / “重发 1 3” 这类补发命令，返回序号列表。
+
+        只在整行就是该命令时命中，避免把“重发这个图看看”之类闲聊误当成命令。
+        序号从 1 开始，与用户看到的图集顺序一致。
+        """
+        pattern = re.compile(r"^\s*重发(?:\s*(\d+(?:\s+\d+)*))?\s*$")
+        for line in text.splitlines():
+            matched = pattern.match(line)
+            if not matched:
+                continue
+            raw = matched.group(1)
+            if not raw:
+                return []
+            return [int(item) for item in raw.split()]
+        return None
 
     @staticmethod
     def _has_reply(message: dict[str, Any]) -> bool:

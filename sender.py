@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 import asyncio
-import base64
 import logging
+import os
 import random
 import urllib.parse
 import urllib.request
@@ -20,6 +20,17 @@ logger = logging.getLogger("plugin.maibot_social_link_parser.sender")
 # only for transport/5xx errors: a definitive 4xx is surfaced immediately.
 SEND_RETRY_TIMES = 2
 SEND_RETRY_BACKOFF = 0.8
+
+# Both containers mount the plugin data directory at the same absolute path
+# (``./data/MaiMBot-plugin-data`` -> ``/MaiMBot/data/plugins``), so a path that is
+# valid for MaiBot is also valid for NapCat. Forwarding images as paths keeps the
+# WebSocket frame small instead of base64-inlining megabytes of gallery data.
+SHARED_DATA_ROOT = "/MaiMBot/data/plugins"
+
+# When the shared volume is not in play (or the file is outside it), inline the
+# image bytes, but only below this size: a single oversized frame fails the whole
+# forward, losing every node in it.
+INLINE_IMAGE_MAX_BYTES = 256 * 1024
 
 
 class ApiSettings:
@@ -186,12 +197,9 @@ async def _send_forward_via_gateway(ctx: Any, message: dict[str, Any], nodes: li
                     segments.append({"type": "text", "content": str(segment.get("data", {}).get("text", ""))})
                 elif segment.get("type") == "image":
                     image_path = _path_from_image_segment(segment)
-                    segments.append(
-                        {
-                            "type": "image",
-                            "content": base64.b64encode(image_path.read_bytes()).decode("ascii"),
-                        }
-                    )
+                    image_segment_payload = _forward_image_segment(image_path)
+                    if image_segment_payload is not None:
+                        segments.append(image_segment_payload)
             if segments:
                 messages.append({"user_id": self_id, "nickname": "麦麦解析", "segments": segments})
     except OSError as exc:
@@ -313,6 +321,48 @@ def _path_from_image_segment(segment: MessageSegment) -> Path:
         parsed = urllib.parse.urlparse(file_value)
         return Path(urllib.request.url2pathname(parsed.path))
     return Path(file_value)
+
+
+def _shared_path_for(path: Path) -> str | None:
+    """Return the shared-volume path NapCat can read, or None if not shared."""
+    # Keep this POSIX-string based: the plugin always runs inside a Linux
+    # container, and os.path.abspath would rewrite "/MaiMBot/..." into a
+    # drive-letter path on a Windows test host, breaking the prefix check.
+    resolved = os.path.normpath(str(path)).replace("\\", "/")
+    root = os.path.normpath(SHARED_DATA_ROOT).replace("\\", "/")
+    if resolved == root or resolved.startswith(root + "/"):
+        return resolved
+    return None
+
+
+def _forward_image_segment(path: Path) -> MessageSegment | None:
+    """Build one forward node image segment without bloating the WebSocket frame.
+
+    Prefer the shared-volume absolute path: NapCat mounts the same directory at the
+    same location, so it resolves the file itself and the frame stays tiny. Only
+    fall back to inlining bytes for files outside the shared root, and only when
+    they are small enough that a single frame cannot fail the whole forward.
+    """
+    shared_path = _shared_path_for(path)
+    if shared_path is not None and path.is_file():
+        return {"type": "image", "content": f"file://{shared_path}"}
+
+    if not path.is_file():
+        logger.warning("Skipping missing forward image: %s", path)
+        return None
+    size = path.stat().st_size
+    if size > INLINE_IMAGE_MAX_BYTES:
+        logger.warning(
+            "Skipping oversized inline forward image (%s bytes, limit %s): %s",
+            size,
+            INLINE_IMAGE_MAX_BYTES,
+            path,
+        )
+        return None
+    import base64 as _base64
+
+    return {"type": "image", "content": _base64.b64encode(path.read_bytes()).decode("ascii")}
+
 
 
 def _is_private_message(message: dict[str, Any]) -> bool:
