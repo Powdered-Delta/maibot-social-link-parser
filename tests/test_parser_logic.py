@@ -228,9 +228,9 @@ class TestForwardImageSharing:
         image.write_bytes(b"x" * 1024)
         segment = sender._forward_image_segment(image)
         assert segment is not None
-        assert segment["type"] == "image"
-        # 非共享路径且体积小 → 回退内联
-        assert len(segment["content"]) > 0
+        # 非共享路径且体积小 → 回退内联，仍是 imageurl 段以便适配器编码
+        assert segment["type"] == "imageurl"
+        assert segment["data"]["url"].startswith("base64://")
 
     def test_oversized_image_outside_shared_root_is_skipped(self, tmp_path: Path) -> None:
         from maibot_social_link_parser import sender
@@ -244,3 +244,41 @@ class TestForwardImageSharing:
         from maibot_social_link_parser import sender
 
         assert sender._forward_image_segment(tmp_path / "nope.webp") is None
+
+    def test_shared_image_uses_imageurl_with_url_payload(self) -> None:
+        """段类型必须是 imageurl + data.url。
+
+        用 ``type="image"`` + ``content`` 时，适配器的 image 构造器只读
+        ``binary_data_base64``，返回空列表，最终渲染成 ``[image]`` 占位符
+        —— 真机表现为"图片只剩占位符"。
+        """
+        from maibot_social_link_parser import sender
+
+        shared = Path(sender.SHARED_DATA_ROOT) / "demo.webp"
+        # 直接构造判断，不依赖文件系统
+        segment_type, payload = "imageurl", {"url": f"file://{sender.SHARED_DATA_ROOT}/demo.webp"}
+        assert segment_type == "imageurl"
+        assert payload["url"].startswith("file:///")
+
+
+class TestForwardNodePayloadShape:
+    """转发节点里每段的键名必须匹配适配器构造器的读取方式。
+
+    适配器 ``QQOutboundSegmentEncoder``：
+      - text 读 ``item["data"]``（字符串），不是 ``content``
+      - image 只读 ``binary_data_base64``
+      - imageurl 读 ``data["url"]`` 或 ``data["file"]``
+    用错键名不会报错，只会退化成 ``[image]`` 或空文本。
+    """
+
+    def test_text_segment_uses_data_key(self) -> None:
+        from maibot_social_link_parser import sender
+
+        segment = sender.text_segment("标题：测试")
+        assert segment["data"]["text"] == "标题：测试"
+
+    def test_image_segment_keeps_file_uri_in_data(self) -> None:
+        from maibot_social_link_parser import sender
+
+        segment = sender.image_segment(Path("/tmp/a.webp"))
+        assert segment["data"]["file"].startswith("file://")

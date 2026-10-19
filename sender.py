@@ -194,7 +194,11 @@ async def _send_forward_via_gateway(ctx: Any, message: dict[str, Any], nodes: li
             segments = []
             for segment in node:
                 if segment.get("type") == "text":
-                    segments.append({"type": "text", "content": str(segment.get("data", {}).get("text", ""))})
+                    # The adapter's text builder reads ``data`` verbatim, not
+                    # ``content``; anything else renders as an empty segment.
+                    segments.append(
+                        {"type": "text", "data": str(segment.get("data", {}).get("text", ""))}
+                    )
                 elif segment.get("type") == "image":
                     image_path = _path_from_image_segment(segment)
                     image_segment_payload = _forward_image_segment(image_path)
@@ -342,10 +346,15 @@ def _forward_image_segment(path: Path) -> MessageSegment | None:
     same location, so it resolves the file itself and the frame stays tiny. Only
     fall back to inlining bytes for files outside the shared root, and only when
     they are small enough that a single frame cannot fail the whole forward.
+
+    The segment type must be ``imageurl`` with a ``data.url`` payload, not
+    ``image`` with a ``content`` string: the adapter's ``image`` builder only reads
+    ``binary_data_base64`` and returns an empty list for anything else, which
+    renders as a bare ``[image]`` placeholder in QQ.
     """
     shared_path = _shared_path_for(path)
     if shared_path is not None and path.is_file():
-        return {"type": "image", "content": f"file://{shared_path}"}
+        return {"type": "imageurl", "data": {"url": f"file://{shared_path}"}}
 
     if not path.is_file():
         logger.warning("Skipping missing forward image: %s", path)
@@ -361,7 +370,10 @@ def _forward_image_segment(path: Path) -> MessageSegment | None:
         return None
     import base64 as _base64
 
-    return {"type": "image", "content": _base64.b64encode(path.read_bytes()).decode("ascii")}
+    return {
+        "type": "imageurl",
+        "data": {"url": f"base64://{_base64.b64encode(path.read_bytes()).decode('ascii')}"},
+    }
 
 
 
