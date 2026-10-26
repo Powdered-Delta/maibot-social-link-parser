@@ -11,6 +11,8 @@ class ParserItem:
     enable: bool = True
     use_proxy: bool = False
     cookies: str = ""
+    check_cookie_valid: bool = True
+    """是否请求平台登录态接口校验 ``cookies``；关闭后直接信任配置里的 Cookie。"""
     show_body_text: bool = True
     video_send_mode: str = "first"
     video_codecs: str = "AVC"
@@ -45,6 +47,7 @@ class PluginConfig:
         download_retry_times: int = 3,
         common_timeout: int = 30,
         bilibili_cookies: str = "",
+        bilibili_check_cookie_valid: bool = True,
         bilibili_video_codecs: str = "AVC",
         bilibili_video_quality: str = "_720P",
         douyin_cookies: str = "",
@@ -79,6 +82,7 @@ class PluginConfig:
                     enable="bilibili" in enabled,
                     use_proxy="bilibili" in proxy_platforms,
                     cookies=bilibili_cookies,
+                    check_cookie_valid=bilibili_check_cookie_valid,
                     video_codecs=bilibili_video_codecs,
                     video_quality=bilibili_video_quality,
                 ),

@@ -230,7 +230,7 @@ class TestForwardImageSharing:
         assert segment is not None
         # 非共享路径且体积小 → 回退内联，仍是 imageurl 段以便适配器编码
         assert segment["type"] == "imageurl"
-        assert segment["data"]["url"].startswith("base64://")
+        assert segment["data"]["data"]["url"].startswith("base64://")
 
     def test_oversized_image_outside_shared_root_is_skipped(self, tmp_path: Path) -> None:
         from maibot_social_link_parser import sender
@@ -245,20 +245,34 @@ class TestForwardImageSharing:
 
         assert sender._forward_image_segment(tmp_path / "nope.webp") is None
 
-    def test_shared_image_uses_imageurl_with_url_payload(self) -> None:
-        """段类型必须是 imageurl + data.url。
+    def test_shared_image_payload_is_nested(self, tmp_path: Path) -> None:
+        """共享卷图片必须是嵌套的 imageurl，不能是扁平的 data.url。
 
-        用 ``type="image"`` + ``content`` 时，适配器的 image 构造器只读
-        ``binary_data_base64``，返回空列表，最终渲染成 ``[image]`` 占位符
-        —— 真机表现为"图片只剩占位符"。
+        扁平结构经 Host 后会变成 DictComponent，内层 ``type`` 丢失，适配器
+        ``_build_dict_component_segment`` 读不到 imageurl，于是降级成
+        ``[unsupported:dict]`` 直接发到 QQ —— 真机表现就是一片
+        ``[unsupported:dict]`` 占位。
         """
         from maibot_social_link_parser import sender
 
-        shared = Path(sender.SHARED_DATA_ROOT) / "demo.webp"
-        # 直接构造判断，不依赖文件系统
-        segment_type, payload = "imageurl", {"url": f"file://{sender.SHARED_DATA_ROOT}/demo.webp"}
-        assert segment_type == "imageurl"
-        assert payload["url"].startswith("file:///")
+        image = Path(sender.SHARED_DATA_ROOT) / "demo.webp"
+        # 直接调私有构造器，避免依赖共享卷在测试机上真实存在
+        segment = sender._nested_imageurl_segment(f"file://{image}")
+
+        assert segment["type"] == "imageurl"
+        inner = segment["data"]
+        assert inner.get("type") == "imageurl", "内层缺少 type，Host 收成 DictComponent 后会丢类型"
+        assert inner["data"]["url"] == f"file://{image}"
+
+    def test_flat_payload_would_lose_its_type(self) -> None:
+        """反例：扁平 payload 里没有 type，这正是 [unsupported:dict] 的来源。"""
+        from maibot_social_link_parser import sender
+
+        nested = sender._nested_imageurl_segment("file:///tmp/a.webp")
+        flat = {"type": "imageurl", "data": {"url": "file:///tmp/a.webp"}}
+
+        assert nested["data"].get("type"), "嵌套形状必须自带内层 type"
+        assert not flat["data"].get("type"), "扁平形状没有内层 type，适配器无法识别"
 
 
 class TestForwardNodePayloadShape:

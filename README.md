@@ -170,6 +170,7 @@ compose 中把 `core.image` 指向 `maibot-ffmpeg` 后重建即可。
 | `network_advanced.common_timeout` | `30` | 解析请求超时，单位秒 |
 | `network_advanced.download_timeout` | `120` | 媒体下载超时，单位秒 |
 | `network_advanced.download_retry_times` | `3` | 媒体下载重试次数 |
+| `cookies.bilibili_check_valid` | `true` | 是否在解析前调用 B站登录态接口（`Credential.check_valid`）校验 `cookies.bilibili`；关闭后直接信任填入的 Cookie，不再发探测请求 |
 | `delivery.delivery_mode` | `websocket` | 默认经 MaiBot 的 NapCat WebSocket 网关发送；可改为 `http` 使用兼容直连 |
 | `api.host`、`api.port`、`api.token` | - | 仅 `delivery.delivery_mode = "http"` 时使用的 NapCat OneBot HTTP 配置 |
 | `ffmpeg.enabled` | `true` | 允许插件自动下载静态 ffmpeg 到数据目录并优先使用；关闭后仅用系统 ffmpeg |
@@ -205,6 +206,7 @@ compose 中把 `core.image` 指向 `maibot-ffmpeg` 后重建即可。
 
 ## 更新历史
 
+- `0.3.9`：B站 Cookie 有效性校验改为显式开关 `cookies.bilibili_check_valid`（WebUI 中位于“B站 Cookie”下方，默认开启）。开启时保持原有行为，每次解析前调用 `Credential.check_valid` 探测登录态，失效则回退到配置数据目录里保存的凭证并按需刷新；关闭后直接信任填入的 Cookie，不再请求登录态接口，适用于校验接口被风控或网络受限、以及需要固定某份 Cookie 的场景，代价是 Cookie 过期不再提前告警，而表现为解析失败或拿不到高画质。
 - `0.3.8`：插件自举 ffmpeg。B站等 DASH 分离流合并音视频必走 ffmpeg，而 MaiBot 官方镜像不保证内置；现默认在首次需要时把静态 ffmpeg 下载到插件数据目录并优先使用（yt-dlp `ffmpeg_location` 同步指向），容器重建后仍在，不依赖镜像。新增 `ffmpeg.enabled` 与 `ffmpeg.download_url` 配置，可按平台自动选择 BtbN 静态构建或自定义归档地址；自举失败仅告警不阻断启动，`exec_ffmpeg_cmd` 未配置时仍回退 PATH 查找。
 - `0.3.7`：修复引用 bot 概览卡片后回复“下载”未被接管的问题。MaiBot 会把 reply 组件的 `target_message_content` 整块内联进 `processed_plain_text`，导致概览内的链接被 `direct_download` 误判。现按引用原文预览精确剔除，引用回复“下载”恢复为对既有待下载任务的确认。
 - `0.3.6`：以 `is_mentioned` 为标准判定 bot 寻址；命令识别前剔除引用回复自动附带的 `[reply]` 与 `@bot 群名片` 占位文本，使引用回复“下载”在 QQ 自动 @ 群名片时仍被准确接管。

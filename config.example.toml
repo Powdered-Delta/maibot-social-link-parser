@@ -1,7 +1,7 @@
 [plugin]
 name = "maibot_social_link_parser"
-config_version = "0.3.8"
-version = "0.3.8"
+config_version = "0.3.9"
+version = "0.3.9"
 enabled = true
 # Do not send to QQ/NapCat. Parsing and downloads still run for local validation.
 dry_run = false
@@ -67,6 +67,12 @@ douyin = ""
 xhs = ""
 xiaoheihe = ""
 bilibili = ""
+# Ask Bilibili's login-state endpoint (Credential.check_valid) whether the cookie
+# above is still valid, and refresh the saved credential when needed. Turn this off
+# to trust the cookie as-is and skip that request entirely, e.g. when the endpoint is
+# rate-limited, unreachable, or you want to pin one specific cookie. An expired cookie
+# then no longer raises an early warning; it shows up as parse failures instead.
+bilibili_check_valid = true
 
 [delivery]
 # Default: route through MaiBot's active NapCat WebSocket gateway.

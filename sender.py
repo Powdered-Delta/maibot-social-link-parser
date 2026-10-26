@@ -347,14 +347,21 @@ def _forward_image_segment(path: Path) -> MessageSegment | None:
     fall back to inlining bytes for files outside the shared root, and only when
     they are small enough that a single frame cannot fail the whole forward.
 
-    The segment type must be ``imageurl`` with a ``data.url`` payload, not
-    ``image`` with a ``content`` string: the adapter's ``image`` builder only reads
-    ``binary_data_base64`` and returns an empty list for anything else, which
-    renders as a bare ``[image]`` placeholder in QQ.
+    The payload must be nested as ``data = {"type": "imageurl", "data": {"url": ...}}``,
+    not flat as ``data = {"url": ...}``. Any unknown plugin segment type becomes a
+    ``DictComponent`` in the Host (``message_utils._component_from_dict``), and the
+    DictComponent payload is what the adapter sees. A flat payload therefore arrives
+    with no ``type`` field, so ``_build_dict_component_segment`` cannot recognise
+    ``imageurl`` and degrades it to ``[unsupported:dict]`` in QQ. The nested shape
+    keeps the inner ``type`` the adapter dispatches on.
+
+    Do not switch this back to ``image`` + ``content`` either: the adapter's
+    ``_build_image_segments`` only reads ``binary_data_base64`` and returns an empty
+    list otherwise, which renders as a bare ``[image]`` placeholder.
     """
     shared_path = _shared_path_for(path)
     if shared_path is not None and path.is_file():
-        return {"type": "imageurl", "data": {"url": f"file://{shared_path}"}}
+        return _nested_imageurl_segment(f"file://{shared_path}")
 
     if not path.is_file():
         logger.warning("Skipping missing forward image: %s", path)
@@ -370,9 +377,22 @@ def _forward_image_segment(path: Path) -> MessageSegment | None:
         return None
     import base64 as _base64
 
+    return _nested_imageurl_segment(f"base64://{_base64.b64encode(path.read_bytes()).decode('ascii')}")
+
+
+def _nested_imageurl_segment(url: str) -> MessageSegment:
+    """Build the nested ``imageurl`` segment the adapter dispatches on.
+
+    Args:
+        url: ``file://`` shared-volume path or ``base64://`` payload.
+
+    Returns:
+        MessageSegment: Nested segment; see ``_forward_image_segment`` for why it
+        cannot be flat.
+    """
     return {
         "type": "imageurl",
-        "data": {"url": f"base64://{_base64.b64encode(path.read_bytes()).decode('ascii')}"},
+        "data": {"type": "imageurl", "data": {"url": url}},
     }
 
 

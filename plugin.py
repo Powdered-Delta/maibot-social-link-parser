@@ -23,7 +23,7 @@ from .core import ffmpeg
 from .core.config import PluginConfig as CorePluginConfig
 from .core.data import DynamicContent, GraphicsContent, ImageContent, ParseResult, TextContent, VideoContent
 from .core.download import Downloader, reset_download_progress_callback, set_download_progress_callback
-from .core.exception import ParseException
+from .core.exception import LinkExpiredException, ParseException
 from .core.parsers import BaseParser
 from .sender import (
     ApiSettings,
@@ -70,8 +70,8 @@ class PluginSectionConfig(PluginConfigBase):
     __ui_order__: ClassVar[int] = 0
 
     name: str = Field(default="maibot_social_link_parser", description="插件内部名称", json_schema_extra=_ui("插件内部名称", "仅用于标识配置；通常无需修改。", 0, label_en="Internal name", hint_en="Used only to identify this configuration. Usually leave unchanged.", label_ja="内部名", hint_ja="設定識別用です。通常は変更不要です。", disabled=True))
-    config_version: str = Field(default="0.3.8", description="配置文件版本", json_schema_extra=_ui("配置版本", "由插件用于补齐配置字段，请勿手动修改。", 1, label_en="Configuration version", hint_en="Used to merge configuration fields. Do not edit manually.", label_ja="設定バージョン", hint_ja="設定項目の統合に使用します。手動で変更しないでください。", disabled=True))
-    version: str = Field(default="0.3.8", description="插件版本", json_schema_extra=_ui("插件版本", "当前插件版本，仅供查看。", 2, label_en="Plugin version", hint_en="Current plugin version. Read only.", label_ja="プラグインバージョン", hint_ja="現在のプラグインバージョンです。読み取り専用です。", disabled=True))
+    config_version: str = Field(default="0.3.9", description="配置文件版本", json_schema_extra=_ui("配置版本", "由插件用于补齐配置字段，请勿手动修改。", 1, label_en="Configuration version", hint_en="Used to merge configuration fields. Do not edit manually.", label_ja="設定バージョン", hint_ja="設定項目の統合に使用します。手動で変更しないでください。", disabled=True))
+    version: str = Field(default="0.3.9", description="插件版本", json_schema_extra=_ui("插件版本", "当前插件版本，仅供查看。", 2, label_en="Plugin version", hint_en="Current plugin version. Read only.", label_ja="プラグインバージョン", hint_ja="現在のプラグインバージョンです。読み取り専用です。", disabled=True))
     enabled: bool = Field(default=True, description="是否启用插件", json_schema_extra=_ui("启用插件", "关闭后不再识别或处理社媒链接。", 3, label_en="Enable plugin", hint_en="When disabled, social media links are not detected or handled.", label_ja="プラグインを有効化", hint_ja="無効時はソーシャルメディアのリンクを処理しません。"))
     dry_run: bool = Field(default=False, description="演练模式", json_schema_extra=_ui("演练模式", "不向 QQ/NapCat 发送任何消息，仅记录拟发送内容；仍会下载媒体，可能消耗流量和磁盘。", 4, label_en="Dry run", hint_en="Prevents all QQ/NapCat sends and logs intended output. Downloads still run and use bandwidth and disk.", label_ja="ドライラン", hint_ja="QQ/NapCat への送信を行わず、送信予定をログに出します。ダウンロードは実行されます。"))
 
@@ -184,6 +184,7 @@ class CookieSectionConfig(PluginConfigBase):
     xhs: str = Field(default="", description="小红书 Cookie", json_schema_extra=_ui("小红书 Cookie", "可选。用于提高公开笔记解析稳定性；应从本人浏览器导出，且不得提交到 Git。", 1, label_en="Xiaohongshu cookie", hint_en="Optional. Improves public-note parsing stability. Export from your own browser and never commit it to Git.", label_ja="Xiaohongshu Cookie", hint_ja="任意。公開ノート解析の安定性を改善します。自身のブラウザからエクスポートし、Git にコミットしないでください。", input_type="password", multiline=True))
     xiaoheihe: str = Field(default="", description="小黑盒 Cookie", json_schema_extra=_ui("小黑盒 Cookie", "可选。只有公开内容无法解析时才需要填写。", 2, label_en="Xiaoheihe cookie", hint_en="Optional. Required only when public content cannot be parsed.", label_ja="Xiaoheihe Cookie", hint_ja="任意。公開コンテンツを解析できない場合のみ必要です。", input_type="password", multiline=True))
     bilibili: str = Field(default="", description="B站 Cookie", json_schema_extra=_ui("B站 Cookie", "可选。启用 B站平台后，可用于访问更高画质或受游客限制的内容。必须使用自己的 Cookie，并注意登录态过期。", 3, label_en="Bilibili cookie", hint_en="Optional. When Bilibili is enabled, it may allow higher quality or guest-restricted content. Use only your own cookie and expect sessions to expire.", label_ja="Bilibili Cookie", hint_ja="任意。Bilibili を有効化した場合、高画質やゲスト制限コンテンツに使用できます。自身の Cookie のみを使い、期限切れに注意してください。", input_type="password", multiline=True))
+    bilibili_check_valid: bool = Field(default=True, description="启用 B站 Cookie 有效性校验", json_schema_extra=_ui("启用 B站 Cookie 有效性校验", "开启时，每次解析前都会调用 B站登录态接口（Credential.check_valid）确认上方 Cookie 仍然有效；失效则回退到插件数据目录里保存的凭证文件，需要刷新时也会顺手刷新。关闭后直接信任上方填入的 Cookie，不再发起登录态查询：适用于校验接口被风控、网络受限，或确实想固定使用某份 Cookie 的场景。代价是 Cookie 过期不会再提前告警，而是表现为解析失败或拿不到高画质。", 4, label_en="Validate Bilibili cookie", hint_en="When on, each parse asks Bilibili's login-state endpoint (Credential.check_valid) whether the cookie above is still valid; on failure it falls back to the credential file saved in the plugin data directory and refreshes it when needed. When off, the cookie is trusted as-is and no login-state request is sent. Useful when that endpoint is rate-limited or unreachable, or when you want to pin one specific cookie. The trade-off is that an expired cookie no longer raises an early warning and instead shows up as parse failures or missing high-quality streams.", label_ja="Bilibili Cookie の有効性チェック", hint_ja="有効時は解析のたびに Bilibili のログイン状態エンドポイント（Credential.check_valid）で上記 Cookie の有効性を確認し、無効ならプラグインのデータディレクトリに保存した認証情報へフォールバックし、必要に応じて更新します。無効時は Cookie をそのまま信頼し、ログイン状態の問い合わせを行いません。エンドポイントが制限されている場合や特定の Cookie を固定したい場合に有用ですが、期限切れは解析失敗や高画質が取れない形で現れます。"))
 
 
 class DeliveryConfig(PluginConfigBase):
@@ -685,11 +686,16 @@ class MultiPlatformParserPlugin(MaiBotPlugin):
         return all_sent, ordered_gallery
 
     async def _resolve_gallery_paths(self, items: list[tuple[int, Any]]) -> dict[int, Path]:
-        """两轮解析图集本地路径，避免"1/2/4/5 成功、3 失败"的残缺图集。
+        """两轮解析图集本地路径，并按失败类型选择补救方式。
 
-        第一轮并发尝试全部图片；对失败项，第二轮用 ``retry_path`` 经下载任务工厂
-        重新发起下载（下载器会保留 ``.part`` 并按 Range 续传），把瞬时失败的图片尽量
-        补齐。只有两轮都失败的槽位才留占位符。
+        第一轮并发尝试全部图片。对失败项按错误性质分流：
+
+        - 瞬时失败（超时 / 连接重置 / 5xx）：用 ``retry_path`` 经下载任务工厂重新
+          发起下载，下载器保留 ``.part`` 并按 Range 续传，把断点补齐。
+        - 签名直链被拒（``LinkExpiredException``，抖音 CDN 的 403）：重试同一 URL
+          只会一直 403，必须由调用方重新解析原分享链接换取新直链，这里不空转。
+
+        两轮都失败的槽位留给调用方发占位符。
         """
         resolved: dict[int, Path] = {}
         if not items:
@@ -699,24 +705,38 @@ class MultiPlatformParserPlugin(MaiBotPlugin):
             *(content.get_path() for _, content in items), return_exceptions=True
         )
         retry_targets: list[tuple[int, Any]] = []
+        expired_targets: list[int] = []
         for (slot, content), outcome in zip(items, first_pass):
             if isinstance(outcome, BaseException):
                 self.ctx.logger.warning("Image %s download failed, will retry: %s", slot, outcome)
-                retry_targets.append((slot, content))
+                if isinstance(outcome, LinkExpiredException):
+                    expired_targets.append(slot)
+                else:
+                    retry_targets.append((slot, content))
             else:
                 resolved[slot] = outcome
 
-        if not retry_targets:
-            return resolved
-        self.ctx.logger.info("Retrying %s failed gallery item(s): %s", len(retry_targets), [s for s, _ in retry_targets])
-        second_pass = await asyncio.gather(
-            *(content.retry_path() for _, content in retry_targets), return_exceptions=True
-        )
-        for (slot, _content), outcome in zip(retry_targets, second_pass):
-            if isinstance(outcome, BaseException):
-                self.ctx.logger.warning("Image %s still failing after retry: %s", slot, outcome)
-            else:
-                resolved[slot] = outcome
+        if expired_targets:
+            # 这些槽位交由 _send_result 重新解析原链接后补下，不在此处空转。
+            self.ctx.logger.info(
+                "Gallery slot(s) %s hit an expired signed link; deferring to re-parse",
+                sorted(expired_targets),
+            )
+
+        if retry_targets:
+            self.ctx.logger.info(
+                "Retrying %s transient gallery failure(s): %s",
+                len(retry_targets),
+                [slot for slot, _ in retry_targets],
+            )
+            second_pass = await asyncio.gather(
+                *(content.retry_path() for _, content in retry_targets), return_exceptions=True
+            )
+            for (slot, _content), outcome in zip(retry_targets, second_pass):
+                if isinstance(outcome, BaseException):
+                    self.ctx.logger.warning("Image %s still failing after retry: %s", slot, outcome)
+                else:
+                    resolved[slot] = outcome
         return resolved
 
     async def _send_media_in_order(self, message: dict[str, Any], media_items: list[Any], header: str) -> bool:
@@ -820,6 +840,7 @@ class MultiPlatformParserPlugin(MaiBotPlugin):
             download_retry_times=self._network_advanced().download_retry_times,
             common_timeout=self._network_advanced().common_timeout,
             bilibili_cookies=self.config.cookies.bilibili,
+            bilibili_check_cookie_valid=self.config.cookies.bilibili_check_valid,
             douyin_cookies=self.config.cookies.douyin,
             xhs_cookies=self.config.cookies.xhs,
             xiaoheihe_cookies=self.config.cookies.xiaoheihe,
@@ -1212,10 +1233,13 @@ class MultiPlatformParserPlugin(MaiBotPlugin):
         return any(self._is_download_confirmation(line) for line in text.splitlines() if line.strip())
 
     def _has_trailing_download_command(self, text: str) -> bool:
-        """链接行以“下载”结尾（分享文案常把“下载”直接粘在链接同行的末尾）。
+        """链接行以“下载”结尾（用户复制分享链接后常在同一行末尾手打“下载”）。
 
         仅匹配“行尾的独立下载词”，因此“看看下载量”“下载速度慢”这类普通语句
-        不会命中；真正带链接的分享文本（``...<url> ... 下载``）才会识别为直接下载。
+        不会命中；用户手写的 ``...<url> ... 下载`` 才会识别为直接下载。
+
+        注意“下载”是用户主动键入的，不是平台分享口令的一部分，所以这里不做口令
+        剔除：粘贴的链接文本原样保留，用户补写的两个字照常生效。
         调用方需先确认消息里确实存在可解析链接，避免纯文本误触发。
         """
         pattern = re.compile(rf"(?:^|\s){self._download_intent_pattern()}\s*(?:\d+)?\s*$")

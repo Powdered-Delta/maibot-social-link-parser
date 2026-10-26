@@ -19,6 +19,18 @@ class DownloadException(ParseException):
         super().__init__(message or "媒体下载失败")
 
 
+class LinkExpiredException(DownloadException):
+    """媒体直链被平台拒绝（403/401/410）。
+
+    抖音等平台的 CDN 直链带防盗链签名：即使 ``x-expires`` 未到期，同一签名 URL
+    重复请求也会被拒。这类失败重试同一 URL 只是空转，必须重新解析原分享链接以
+    换取新直链。
+    """
+
+    def __init__(self, message: str | None = None):
+        super().__init__(message or "媒体直链已失效，需要重新解析")
+
+
 class DownloadLimitException(DownloadException):
     """下载超过限制异常"""
 

@@ -41,7 +41,11 @@ def enable_advanced_parser(plugin: MultiPlatformParserPlugin, **overrides) -> No
 
 
 class TestTrailingDownloadCommand:
-    """分享文案把“下载”粘在链接同一行末尾时也要识别为直接下载。"""
+    """用户复制链接后在同一行末尾手打“下载”时，识别为直接下载。
+
+    “下载”是用户主动键入的，不是平台分享口令的一部分；这里钉住的是
+    “链接 + 同一行尾部下载词”这一组合，而不是口令文本本身。
+    """
 
     LINE = (
         "2.51 复制打开抖音，看看【夏勒克的图文作品】有点恐怖了。# 维斯塔潘 # 勒克莱尔 # 汉密尔... "

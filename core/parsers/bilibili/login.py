@@ -16,6 +16,7 @@ class BilibiliLogin:
     def __init__(self, config: PluginConfig):
         self.credential_file = config.data_dir / "cookies" / "bilibili_credential.json"
         self.raw_cookies = config.parser.bilibili.cookies
+        self.check_valid_enabled = config.parser.bilibili.check_cookie_valid
         self._credential: Credential | None = None
 
     def _save_credential(self):
@@ -82,6 +83,18 @@ class BilibiliLogin:
             return
 
         credential = Credential.from_cookies(self._cookies_to_dict(self.raw_cookies))
+        if not self.check_valid_enabled:
+            # 用户显式关闭校验时跳过 ``Credential.check_valid``：该调用每次解析都会
+            # 请求 passport/nav 接口，遇到风控或网络受限时会让整条链接解析失败。
+            # 关闭后直接信任配置里的 Cookie 并落盘，行为退化为“不做登录态探测”。
+            logger.info(
+                "B站 Cookie 校验已关闭，直接使用配置中的 Cookie: %s",
+                self.credential_file,
+            )
+            self._credential = credential
+            self._save_credential()
+            return
+
         if await credential.check_valid():
             logger.info(f"`parser_bili_ck` 有效, 保存到 {self.credential_file}")
             self._credential = credential
@@ -96,6 +109,9 @@ class BilibiliLogin:
 
         if self._credential is None:
             await self._init_credential()
+            return self._credential
+
+        if not self.check_valid_enabled:
             return self._credential
 
         if not await self._credential.check_valid():

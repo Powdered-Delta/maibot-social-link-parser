@@ -20,6 +20,7 @@ from .constants import COMMON_HEADER
 from .exception import (
     DownloadException,
     DurationLimitException,
+    LinkExpiredException,
     ParseException,
     SizeLimitException,
     ZeroSizeException,
@@ -130,6 +131,12 @@ class Downloader:
                 async with self.client.get(
                     url, headers=request_headers, allow_redirects=True, proxy=proxy
                 ) as response:
+                    if response.status in (401, 403, 410):
+                        # 抖音等平台的 CDN 直链带防盗链签名。签名被拒时重试同一个
+                        # URL 只会一直 403，必须由上层重新解析原链接取新直链。
+                        raise LinkExpiredException(
+                            f"媒体直链被拒绝: HTTP {response.status} {response.reason}"
+                        )
                     if response.status >= 400:
                         raise ClientError(f"HTTP {response.status} {response.reason}")
                     if existing_size and response.status != 206:
@@ -179,6 +186,10 @@ class Downloader:
                 return file_path
             except (ZeroSizeException, SizeLimitException):
                 await safe_unlink(file_path)
+                await safe_unlink(part_path)
+                raise
+            except LinkExpiredException:
+                # 不做退避重试：同一签名 URL 再请求也不会成功。
                 await safe_unlink(part_path)
                 raise
             except (ClientError, TimeoutError, OSError) as exc:
